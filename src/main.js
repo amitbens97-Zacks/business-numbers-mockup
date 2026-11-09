@@ -6,10 +6,10 @@
 // Shift+D opens the developer notes, the scenarios and the screen list.
 import { html, render, useState, useEffect, useRef, Icon, cx } from './lib.js';
 import { Logo, PartnerBubble, Progress, TopBar, BottomBar, Status, PrimaryButton, Button, Toast } from './components.js';
-import { STEP, PARTS, STEP_SCREENS, SCENARIOS, DEFAULT_SCENARIO, g } from './data.js';
+import { STEP, PARTS, STEP_SCREENS, SCENARIOS, DEFAULT_SCENARIO, HISTORY_FIRST, g } from './data.js';
 import { model, missingOf, paidProducts, todayText } from './calc.js';
 import { Opening, StageScreen, PricesScreen } from './parts.js';
-import { TodayScreen, ALL_SECTIONS } from './today.js';
+import { TodayScreen, ALL_SECTIONS, historyMissing } from './today.js';
 import { GoalScreen, SellScreen, ForecastScreen } from './plan.js';
 import { DocScreen, Done, Home, Paywall, financeLink } from './finish.js';
 import { DevPanel } from './devnotes.js';
@@ -26,18 +26,11 @@ function makeScenario(id) {
 
 // The first entry is empty. A direct link (or a jump in the developer panel) past part 1
 // fills it with the scenario's demo, so every later screen opens with numbers.
-const DEMO_MONTHS = [[0, 0], [890, 1], [3900, 1], [890, 1], [2500, 1], [6290, 2]];
 function fillTo(st, screen, scenarioId) {
   const at = SCREENS.indexOf(screen);
   if (at > SCREENS.indexOf('today')) {
     if (st.bank.amount == null) (SCENARIOS.find((x) => x.id === scenarioId) || SCENARIOS[0]).demo(st);
-    if (st.stage !== 'setup' && st.history.months.some((x) => x.income == null)) {
-      st.history.mode = st.history.mode || 'manual';
-      st.history.months.forEach((x, i) => {
-        x.income = x.income ?? DEMO_MONTHS[i][0];
-        x.clients = x.clients ?? DEMO_MONTHS[i][1];
-      });
-    }
+    if (st.stage !== 'setup' && historyMissing(st)) st.history = { ...HISTORY_FIRST };
     if (st.bank.has == null) st.bank.has = true;
     if (st.setupBudget == null && st.stage === 'setup') st.setupBudget = 0;
     if (st.setupDone == null) st.setupDone = true;
@@ -79,8 +72,7 @@ function reasonOf(screen, s, m) {
     if (s.bank.amount == null) return 'צריך לכתוב כמה כסף יש היום';
     if (s.stage === 'setup' && s.setupBudget == null) return 'צריך את תקציב ההקמה';
     if (s.stage !== 'setup') {
-      if (!s.history.mode && s.history.months.some((x) => x.income == null)) return 'צריך את ששת החודשים האחרונים';
-      if (s.history.months.some((x) => x.income == null)) return 'חסרות הכנסות בחלק מהחודשים';
+      if (historyMissing(s)) return historyMissing(s);
       if (s.stage === 'active' && s.regular.amount == null) return 'צריך את ההכנסה הקבועה';
       if (s.setupDone == null) return 'צריך לענות אם ההקמה הסתיימה';
     }

@@ -108,12 +108,18 @@ export const FLOWBIZ_SETUP = [
   { id: 'fb-msg', name: 'דף המסרים (קופירייטינג)', icon: 'pen-line', value: 1800, step: 7 },
   { id: 'fb-lp', name: 'דף נחיתה', icon: 'layout-template', value: 3500, step: 9 },
 ];
+// What the FlowBiz subscription replaces each month (draft values for Amit).
 export const FLOWBIZ_TOOLS = [
-  { id: 'fb-cal', name: 'יומן וזימון פגישות', icon: 'calendar-days', value: 50 },
-  { id: 'fb-crm', name: 'ניהול לידים ולקוחות', icon: 'users', value: 150 },
+  { id: 'fb-lp-host', name: 'דף נחיתה ואחסון', icon: 'layout-template', value: 120 },
+  { id: 'fb-content', name: 'יצירת תוכן לרשתות', icon: 'sparkles', value: 300 },
   { id: 'fb-bot', name: 'בוט וואטסאפ לשירות לקוחות', icon: 'message-circle', value: 250 },
-  { id: 'fb-content', name: 'מכונת תוכן לרשתות', icon: 'sparkles', value: 300 },
+  { id: 'fb-crm', name: 'ניהול לידים ולקוחות', icon: 'users', value: 150 },
+  { id: 'fb-cal', name: 'יומן וזימון פגישות', icon: 'calendar-days', value: 50 },
 ];
+// The FlowBiz subscription is a real fixed expense: it is in the list from the first
+// entry, counts in every calculation, and can't be removed or cut by a fix.
+export const FLOWBIZ_PRICE = 350;
+export const flowbizExpense = () => ({ id: 'x-flowbiz', name: 'FlowBiz', amount: FLOWBIZ_PRICE, category: 'flowbiz', freq: 'monthly', day: 1, start: 'now', flowbiz: true });
 
 // The shark's one-time setup suggestions for a marketing consultant (the model writes
 // these in production, from the business type). Never what FlowBiz already gives.
@@ -166,25 +172,11 @@ const SETUP_ITEMS = [
 
 const exp = (name, amount, category, freq, day, start = 'now') => ({ id: nextId('x'), name, amount, category, freq, day, start });
 
-// The last 6 months (stages 2 and 3), oldest first.
-const HISTORY_FIRST = [
-  { key: '2026-05', income: 0, clients: 0 },
-  { key: '2026-06', income: 890, clients: 1 },
-  { key: '2026-07', income: 3900, clients: 1 },
-  { key: '2026-08', income: 890, clients: 1 },
-  { key: '2026-09', income: 2500, clients: 1 },
-  { key: '2026-10', income: 6290, clients: 2 },
-];
-const HISTORY_ACTIVE = [
-  { key: '2026-05', income: 9800, clients: 2 },
-  { key: '2026-06', income: 11300, clients: 3 },
-  { key: '2026-07', income: 10400, clients: 2 },
-  { key: '2026-08', income: 12600, clients: 3 },
-  { key: '2026-09', income: 11900, clients: 3 },
-  { key: '2026-10', income: 13100, clients: 3 },
-];
-
-const EMPTY_MONTHS = HISTORY_FIRST.map((m) => ({ key: m.key, income: null, clients: null }));
+// Income and expenses up to today (stages 2 and 3): one total each, from the month the
+// business started. `from` is a month key; the totals count up to the end of last month.
+export const EMPTY_HISTORY = { mode: null, from: null, income: null, out: null, clients: null };
+export const HISTORY_FIRST = { mode: 'manual', from: '2026-05', income: 14470, out: 9800, clients: 6 };
+const HISTORY_ACTIVE = { mode: 'manual', from: '2026-01', income: 115000, out: 21500, clients: 27 };
 
 function base(extra) {
   return {
@@ -192,8 +184,8 @@ function base(extra) {
     bank: { has: null, amount: null },
     setupBudget: null,
     setup: [],
-    expenses: [],
-    history: { mode: null, months: clone(EMPTY_MONTHS) },
+    expenses: [flowbizExpense()],
+    history: clone(EMPTY_HISTORY),
     toCome: { now: null, next: null, later: null },
     setupDone: null,
     regular: { amount: null, day: 1 },
@@ -219,7 +211,7 @@ function base(extra) {
 // Each scenario is a user arriving at step 5 with what the earlier steps know: the basket,
 // the goal and the hours. Part 1 starts empty. `demo` fills part 1 (for a direct link or a
 // dev jump past it), so every later screen opens with numbers.
-const expenses = (acct = 350) => [exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva', 55, 'tools', 'monthly', 1), exp('הנהלת חשבונות', acct, 'pro', 'monthly', 10)];
+const expenses = (acct = 350) => [flowbizExpense(), exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva', 55, 'tools', 'monthly', 1), exp('הנהלת חשבונות', acct, 'pro', 'monthly', 10)];
 export const SCENARIOS = [
   {
     id: 'setup',
@@ -243,7 +235,7 @@ export const SCENARIOS = [
     demo: (s) => {
       s.bank = { has: false, amount: 6400 };
       s.expenses = [...expenses(), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0)];
-      s.history = { mode: 'manual', months: clone(HISTORY_FIRST) };
+      s.history = clone(HISTORY_FIRST);
       s.toCome = { now: 2500, next: 2500, later: 0 };
       s.setupDone = false;
       s.setup = [item('s1', 'מצלמה ותאורה לזום', 'camera', 900, 0)];
@@ -258,7 +250,7 @@ export const SCENARIOS = [
     demo: (s) => {
       s.bank = { has: true, amount: 1800 };
       s.expenses = [...expenses(450), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)];
-      s.history = { mode: 'manual', months: clone(HISTORY_ACTIVE) };
+      s.history = clone(HISTORY_ACTIVE);
       s.toCome = { now: 4400, next: 4900, later: 2500 };
       s.setupDone = true;
       s.regular = { amount: 4400, day: 1 };
@@ -283,7 +275,7 @@ export const DEFAULT_SCENARIO = 'setup';
 // A P&L export the user uploads in stage 2 (demo numbers only, never a real file).
 export const DEMO_REPORT = {
   file: 'רווח והפסד 2026.xlsx',
-  months: HISTORY_FIRST,
+  history: { ...HISTORY_FIRST, mode: 'file' },
   expenseLines: [
     { name: 'Zoom', amount: 60 },
     { name: 'Canva ואחסון', amount: 110 },

@@ -4,10 +4,10 @@
 import { html, useState, useRef, useEffect, Icon, PencilCheck, cx } from './lib.js';
 import { Button, StepHeading, InlineEdit } from './components.js';
 import { Field, Tag, Sheet, NumEdit, Num } from './ui.js';
-import { TODAY, PARTS, FREQS, SHARK_EXPENSES, SHARK_SETUP, FLOWBIZ_SETUP, FLOWBIZ_TOOLS, DEMO_REPORT, nextId, g, stageOf } from './data.js';
+import { TODAY, PARTS, FREQS, SHARK_EXPENSES, SHARK_SETUP, FLOWBIZ_SETUP, FLOWBIZ_TOOLS, FLOWBIZ_PRICE, DEMO_REPORT, nextId, g, stageOf } from './data.js';
 import {
   fmt, num, monthName, monthYear, monthlyCost, FORECAST_MONTHS, setupSummary, itemLeft, savedOf, todayAvg, runway,
-  fixedMonthly, isLicensed, cushionTarget,
+  fixedMonthly, isLicensed, cushionTarget, addMonth, flowbizNet,
 } from './calc.js';
 import { Money, YesNo } from './parts.js';
 
@@ -235,6 +235,37 @@ function ExpenseRow({ x, set, remove }) {
   </li>`;
 }
 
+// The FlowBiz subscription: a real expense on one side, what it replaces on the other.
+function FlowBizRow() {
+  const worth = savedOf(FLOWBIZ_TOOLS);
+  return html`<li class="border-t border-line py-3">
+    <div class="grid items-start gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:gap-5">
+      <div class="flex min-w-0 items-center gap-3">
+        <img src="assets/flowbiz-mark-color.png" alt="" class="h-10 w-10 shrink-0 rounded-xl border border-line bg-white object-contain p-1" />
+        <div class="min-w-0">
+          <b class="block text-[15px] leading-tight">FlowBiz</b>
+          <small class="text-[13px] text-muted">המנוי החודשי · ${g('כבר משלם', 'כבר משלמת')}</small>
+        </div>
+        <span class="flex-1"></span>
+        <span class="text-end"><${Num} n=${FLOWBIZ_PRICE} class="text-[17px]" /><small class="block text-[12px] text-muted">בחודש</small></span>
+      </div>
+      <div class="rounded-xl bg-money-50 p-3 text-money">
+        <p class="mb-1 flex items-center gap-1.5 text-[13px] font-bold"><${Icon} name=${SAVED_ICON} size=${15} />בתוך המנוי, במקום לשלם על:</p>
+        <ul class="text-[14px]">
+          ${FLOWBIZ_TOOLS.map(
+            (x) => html`<li key=${x.id} class="flex items-center justify-between gap-3 py-0.5">
+              <span class="flex min-w-0 items-center gap-2"><${Icon} name=${x.icon} size=${15} class="shrink-0" /><span class="text-ink">${x.name}</span></span>
+              <span class="shrink-0 font-bold tabular-nums">${fmt(x.value)}</span>
+            </li>`,
+          )}
+        </ul>
+        <p class="mt-1.5 flex justify-between gap-3 border-t border-money/30 pt-1.5 text-[13px] font-bold"><span>שווה</span><span class="tabular-nums">${fmt(worth)} בחודש</span></p>
+        <p class="flex items-baseline justify-between gap-3 font-bold"><span class="text-[15px]">חוסך לך</span><span class="font-display text-[20px] font-black tabular-nums">${fmt(flowbizNet())} בחודש</span></p>
+      </div>
+    </div>
+  </li>`;
+}
+
 function ExpensesTable({ s, up }) {
   const have = new Set(s.expenses.map((x) => x.name));
   const set = (id) => (patch) => up((d) => Object.assign(d.expenses.find((y) => y.id === id), patch));
@@ -244,9 +275,13 @@ function ExpensesTable({ s, up }) {
       <span>הוצאה</span><span>סכום</span><span>כל כמה זמן</span><span>מתי מתחיל</span><span></span>
     </div>
     <ul>
-      ${s.expenses.map((x) => html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`)}
+      ${s.expenses.map((x) =>
+        x.flowbiz
+          ? html`<${FlowBizRow} key=${x.id} />`
+          : html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`,
+      )}
     </ul>
-    ${!s.expenses.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
+    ${!s.expenses.some((x) => !x.flowbiz) && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות אחרות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
     <div class="flex items-center justify-between gap-3 border-t-2 border-ink/70 pt-3">
       <b class="text-[15px]">סך הכול בחודש</b><${Num} n=${fixedMonthly(s)} class="text-[17px]" />
     </div>
@@ -258,14 +293,6 @@ function ExpensesTable({ s, up }) {
       onAdd=${(x) => add({ ...x })}
     />
 
-    <h3 class="mt-6 flex flex-wrap items-baseline justify-between gap-2 text-[15px] font-bold">
-      <span class="flex items-center gap-2"><span class="text-money"><${Icon} name=${SAVED_ICON} size=${17} /></span>כלים שכבר יש לך ב-FlowBiz</span>
-      <span class="text-[13px] font-semibold text-muted">לא יוצא מהעסק</span>
-    </h3>
-    <ul class="mt-1">${FLOWBIZ_TOOLS.map((x) => html`<${SavedRow} key=${x.id} x=${x} cols=${SETUP_COLS} unit=" בחודש" />`)}</ul>
-    <p class="flex items-center justify-between gap-3 border-t-2 border-money/40 pt-3 text-[15px] font-bold text-money">
-      <span>חסכת עם FlowBiz</span><span class="font-display text-[19px] font-black tabular-nums">${fmt(savedOf(FLOWBIZ_TOOLS))} בחודש</span>
-    </p>
   </div>`;
 }
 
@@ -287,65 +314,87 @@ function MoneyNow({ s, up }) {
 
 function ImportSheet({ onClose, onApply }) {
   const [step, setStep] = useState('pick');
+  const r = DEMO_REPORT.history;
+  const rows = [
+    ['מאיזה חודש', monthYear(r.from)],
+    ['נכנס לעסק', fmt(r.income)],
+    ['יצא מהעסק', fmt(r.out)],
+    ['לקוחות ששילמו', num(r.clients)],
+  ];
   return html`<${Sheet} title="דוח רווח והפסד" wide onClose=${onClose} footer=${step === 'review' && html`<${Button} variant="secondary" onClick=${onClose}>ביטול<//><${Button} onClick=${onApply}>אישור והכנסה לשלב<${Icon} name="check" size=${18} /><//>`}>
     ${step === 'pick'
       ? html`<button type="button" class="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-brand-300 bg-white p-8 text-center hover:bg-brand-50 cursor-pointer" onClick=${() => setStep('review')}>
           <span class="text-brand-600"><${Icon} name="file-spreadsheet" size=${36} /></span>
           <b class="text-[17px]">לבחור קובץ אקסל</b>
-          <small class="text-[14px] text-muted">דוח רווח והפסד מרואה החשבון או מתוכנת הנהלת החשבונות. הכריש קורא אותו ומחלק לחודשים.</small>
+          <small class="text-[14px] text-muted">דוח רווח והפסד מרואה החשבון או מתוכנת הנהלת החשבונות. הכריש מסכם ממנו כמה נכנס וכמה יצא.</small>
         </button>`
       : html`<div class="rise">
-          <p class="mb-3 flex items-center gap-2 text-[14px]"><${Icon} name="file-check-2" size=${18} class="text-brand-600" /><b>${DEMO_REPORT.file}</b> · נמצאו 6 חודשים. כדאי לעבור על המספרים לפני שמכניסים.</p>
-          <table class="mb-4 w-full text-[14px]">
-            <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">חודש</th><th class="pb-1 text-start">הכנסות</th><th class="pb-1 text-start">לקוחות</th></tr></thead>
-            <tbody>${DEMO_REPORT.months.map((m) => html`<tr key=${m.key} class="border-t border-line tabular-nums"><td class="py-1.5 font-bold">${monthYear(m.key)}</td><td class="py-1.5">${fmt(m.income)}</td><td class="py-1.5">${m.clients}</td></tr>`)}</tbody>
-          </table>
+          <p class="mb-3 flex items-center gap-2 text-[14px]"><${Icon} name="file-check-2" size=${18} class="text-brand-600" /><b>${DEMO_REPORT.file}</b> · כדאי לעבור על המספרים לפני שמכניסים.</p>
+          <dl class="mb-4 text-[15px]">
+            ${rows.map(([k, v]) => html`<div key=${k} class="flex justify-between gap-3 border-t border-line py-2"><dt>${k}</dt><dd class="font-bold tabular-nums">${v}</dd></div>`)}
+          </dl>
         </div>`}
   <//>`;
 }
 
+// Start months: from last month back four years, newest first.
+const LAST_MONTH = addMonth(TODAY.slice(0, 7), -1);
+const START_MONTHS = Array.from({ length: 48 }, (_, i) => addMonth(LAST_MONTH, -i));
+
 function History({ s, up }) {
   const [sheet, setSheet] = useState(false);
-  const mode = s.history.mode;
+  const h = s.history;
   const avg = todayAvg(s);
+  const set = (k) => (v) => up((d) => (d.history[k] = v));
   return html`<div>
-    ${!mode &&
+    ${!h.mode &&
     html`<div class="grid gap-3 md:grid-cols-2">
       <button type="button" class="lp-option !p-4" onClick=${() => setSheet(true)}>
         <span class="text-brand-600"><${Icon} name="file-spreadsheet" size=${26} /></span>
-        <span><b class="block text-[16px]">להעלות דוח רווח והפסד</b><small class="text-[13px] text-muted">קובץ אקסל, הכריש מחלק לחודשים</small></span>
+        <span><b class="block text-[16px]">להעלות דוח רווח והפסד</b><small class="text-[13px] text-muted">קובץ אקסל, הכריש מסכם ממנו</small></span>
       </button>
       <button type="button" class="lp-option !p-4" onClick=${() => up((d) => (d.history.mode = 'manual'))}>
         <span class="text-brand-600"><${Icon} name="pencil" size=${26} /></span>
-        <span><b class="block text-[16px]">למלא ${g('בעצמי', 'בעצמי')}</b><small class="text-[13px] text-muted">שני מספרים לכל חודש</small></span>
+        <span><b class="block text-[16px]">למלא ${g('בעצמי', 'בעצמי')}</b><small class="text-[13px] text-muted">מתי התחלת, וכמה נכנס ויצא עד היום</small></span>
       </button>
     </div>`}
-    ${mode &&
+    ${h.mode &&
     html`<div class="rise">
-      ${mode === 'file' && html`<p class="mb-2 flex items-center gap-2 text-[14px]"><${Tag} tone="blue"><${Icon} name="file-check-2" size=${13} />מהדוח<//>אפשר לתקן כל מספר.</p>`}
-      <div class="thin-scroll overflow-x-auto">
-        <table class="w-full min-w-[480px] text-[14px]">
-          <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">חודש</th><th class="pb-1 text-start">כמה נכנס</th><th class="pb-1 text-start">כמה לקוחות שילמו</th></tr></thead>
-          <tbody>
-            ${s.history.months.map(
-              (m, i) => html`<tr key=${m.key} class="border-t border-line">
-                <td class="py-1.5 pe-2 font-bold">${monthYear(m.key)}</td>
-                <td class="py-1.5 pe-2"><${Money} label=${`הכנסות ${monthName(m.key)}`} value=${m.income} onChange=${(v) => up((d) => (d.history.months[i].income = v))} /></td>
-                <td class="py-1.5"><${Money} suffix="" label=${`לקוחות ${monthName(m.key)}`} value=${m.clients} onChange=${(v) => up((d) => (d.history.months[i].clients = v))} /></td>
-              </tr>`,
-            )}
-          </tbody>
-        </table>
+      ${h.mode === 'file' && html`<p class="mb-3 flex items-center gap-2 text-[14px]"><${Tag} tone="blue"><${Icon} name="file-check-2" size=${13} />מהדוח<//>אפשר לתקן כל מספר.</p>`}
+      <${Field} label="מאיזה חודש העסק התחיל?" hint="עסק שפעיל כמה שנים? אפשר לספור מינואר שעבר, כדי שהממוצע ישקף את היום.">
+        <select class=${cx(selCls, '!h-12 max-w-[280px] !text-[15px]')} aria-label="מאיזה חודש העסק התחיל" value=${h.from || ''} onChange=${(e) => set('from')(e.target.value || null)}>
+          <option value="">לבחור חודש</option>
+          ${START_MONTHS.map((k) => html`<option key=${k} value=${k}>${monthYear(k)}</option>`)}
+        </select>
+      <//>
+      <div class="grid gap-x-4 md:grid-cols-3">
+        <${Field} label="כמה נכנס לעסק עד היום?" hint=${`כל ההכנסות, עד סוף ${monthYear(LAST_MONTH)}`}>
+          <${Money} label="כמה נכנס עד היום" value=${h.income} onChange=${set('income')} />
+        <//>
+        <${Field} label="כמה יצא מהעסק עד היום?" hint="כל ההוצאות, כולל ההקמה">
+          <${Money} label="כמה יצא עד היום" value=${h.out} onChange=${set('out')} />
+        <//>
+        <${Field} label="כמה לקוחות שילמו עד היום?" hint="כל לקוח נספר פעם אחת">
+          <${Money} suffix="" label="כמה לקוחות שילמו עד היום" value=${h.clients} onChange=${set('clients')} />
+        <//>
       </div>
-      ${avg && html`<p class="mt-2 text-[14px]">בממוצע: <b class="tabular-nums">${fmt(avg.gross)}</b> בחודש, מ-<b class="tabular-nums">${num(avg.clients, 1)}</b> לקוחות.</p>`}
-      ${mode === 'manual' && html`<button type="button" class="mt-1 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setSheet(true)}>יש לך דוח רווח והפסד? להעלות במקום</button>`}
+      ${avg &&
+      html`<div class="mt-1 rounded-xl bg-canvas p-3 text-[14px]">
+        <p class="mb-1 text-[13px] font-bold text-muted">${avg.n === 1 ? 'חודש אחד' : `${avg.n} חודשים`}, מ${monthYear(h.from)} עד ${monthYear(LAST_MONTH)}. בממוצע בחודש:</p>
+        <p class="flex flex-wrap gap-x-5 gap-y-1">
+          <span>נכנס <b class="tabular-nums">${fmt(avg.gross)}</b></span>
+          ${avg.pastOut != null && html`<span>יצא <b class="tabular-nums">${fmt(avg.pastOut)}</b></span>`}
+          ${h.clients != null && html`<span><b>${Math.abs(avg.clients - 1) < 0.05 ? 'לקוח חדש אחד' : `${num(avg.clients, 1)} לקוחות חדשים`}</b></span>`}
+        </p>
+      </div>`}
+      ${h.mode === 'manual' && html`<button type="button" class="mt-2 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setSheet(true)}>יש לך דוח רווח והפסד? להעלות במקום</button>`}
     </div>`}
     ${sheet &&
     html`<${ImportSheet}
       onClose=${() => setSheet(false)}
       onApply=${() => {
         setSheet(false);
-        up((d) => (d.history = { mode: 'file', months: DEMO_REPORT.months.map((m) => ({ ...m })) }), 'הדוח נכנס: 6 חודשים');
+        up((d) => (d.history = { ...DEMO_REPORT.history }), 'הדוח נכנס');
       }}
     />`}
   </div>`;
@@ -401,6 +450,16 @@ function Cushion({ s, up }) {
 
 // ---------- the guided list ----------
 
+// What part 1 still needs about the income and expenses so far (null = nothing).
+export function historyMissing(s) {
+  const h = s.history;
+  if (!h.from) return 'צריך את החודש שבו העסק התחיל';
+  if (h.income == null) return 'צריך כמה נכנס עד היום';
+  if (h.out == null) return 'צריך כמה יצא עד היום';
+  if (h.clients == null) return 'צריך כמה לקוחות שילמו עד היום';
+  return null;
+}
+
 const toComeOf = (s) => (s.toCome.now || 0) + (s.toCome.next || 0) + (s.toCome.later || 0);
 
 export function sectionsOf(s) {
@@ -424,11 +483,11 @@ export function sectionsOf(s) {
       onNext: (d) => d.setupBudget == null && (d.setupBudget = setupSummary(d).final),
     },
     history: {
-      title: 'ששת החודשים האחרונים',
-      sub: 'כמה נכנס בכל חודש, ומכמה לקוחות. מזה נחשב איך נראה חודש ממוצע היום.',
-      ok: s.history.months.every((m) => m.income != null),
-      need: 'חסרות הכנסות בחלק מהחודשים',
-      sum: avg ? `בממוצע ${fmt(avg.gross)} בחודש, ${num(avg.clients, 1)} לקוחות` : '',
+      title: 'הכנסות והוצאות עד היום',
+      sub: 'כמה נכנס לעסק וכמה יצא ממנו מאז שהתחיל. מזה נחשב איך נראה חודש ממוצע היום.',
+      ok: historyMissing(s) == null,
+      need: historyMissing(s),
+      sum: avg ? `נכנסו ${fmt(s.history.income)}${s.history.out != null ? `, יצאו ${fmt(s.history.out)}` : ''} · ${avg.n === 1 ? 'חודש אחד' : `${avg.n} חודשים`}` : '',
       Body: History,
     },
     regular: {
@@ -535,7 +594,7 @@ function Summary({ s }) {
     <div class="mt-3 rounded-xl bg-money-50 px-3 py-2 text-[13px] font-bold text-money">
       <p class="mb-0.5 flex items-center gap-1.5"><${Icon} name=${SAVED_ICON} size=${15} />חסכת עם FlowBiz</p>
       ${(s.stage === 'setup' || s.setupDone === false) && html`<p class="flex justify-between gap-2"><span>בהקמה</span><span class="tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>`}
-      <p class="flex justify-between gap-2"><span>כל חודש</span><span class="tabular-nums">${fmt(savedOf(FLOWBIZ_TOOLS))}</span></p>
+      <p class="flex justify-between gap-2"><span>כל חודש, מעבר למנוי</span><span class="tabular-nums">${fmt(flowbizNet())}</span></p>
     </div>
   </div>`;
 }

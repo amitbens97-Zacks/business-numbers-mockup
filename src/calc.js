@@ -17,7 +17,7 @@
 //   - The cash line: the owner takes out what the month left, up to the goal; a loss
 //     comes out of the business's money; what is above the goal stays in the business.
 //     In stage 3 the cushion set-aside comes first, until the cushion is full.
-import { SETTINGS, FIRST_MONTH, TODAY } from './data.js';
+import { SETTINGS, FIRST_MONTH, TODAY, FLOWBIZ_TOOLS, FLOWBIZ_PRICE } from './data.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const SHORT = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -92,16 +92,30 @@ export const taxRate = (s) => (s.taxPct ?? 0) / 100;
 
 // ---------- today (stages 2-3) ----------
 
+// Full months from the month the business started to the end of last month (at least 1).
+export function monthsSince(from) {
+  if (!from) return 0;
+  const [y1, m1] = from.split('-').map(Number);
+  const [y2, m2] = TODAY.slice(0, 7).split('-').map(Number);
+  return Math.max(1, (y2 - y1) * 12 + (m2 - m1));
+}
+
+// An average month today, from the totals up to today. The income and clients come from
+// the totals; what goes out is today's fixed expenses (the totals include one-time costs).
 export function todayAvg(s) {
-  const months = (s.history.months || []).filter((m) => m.income != null);
-  if (!months.length) return null;
-  const gross = months.reduce((t, m) => t + m.income, 0) / months.length;
-  const clients = months.reduce((t, m) => t + (m.clients || 0), 0) / months.length;
+  const h = s.history;
+  if (!h.from || h.income == null) return null;
+  const n = monthsSince(h.from);
+  const gross = h.income / n;
+  const clients = (h.clients || 0) / n;
   const income = isLicensed(s) ? gross / (1 + vatRate()) : gross;
   const out = fixedMonthly(s);
   const tax = income * taxRate(s);
-  return { gross, income, vat: gross - income, clients, out, tax, left: income - out - tax, n: months.length };
+  const pastOut = h.out != null ? h.out / n : null;
+  return { gross, income, vat: gross - income, clients, out, tax, left: income - out - tax, n, pastOut };
 }
+// What FlowBiz saves each month beyond its own price (shown, never counted).
+export const flowbizNet = () => savedOf(FLOWBIZ_TOOLS) - FLOWBIZ_PRICE;
 
 // Months the money lasts with no income at all (stage 1), or with only the money to
 // come (stages 2-3).
@@ -371,7 +385,7 @@ export function checks(s, mix, fc) {
       sub: `היום ${clientsText(today.clients)} בחודש, צריך ${num(st.newClients, 1)}${ratio > 1 ? `: עוד ${num(monthly)}% בכל חודש, ${fc.ramp} חודשים` : ''}`,
       ratio,
       how: [
-        ['לקוחות חדשים בחודש היום (ממוצע 6 חודשים)', num(today.clients, 1)],
+        [`לקוחות חדשים בחודש היום (ממוצע ${today.n} חודשים)`, num(today.clients, 1)],
         ['צריך בחודש מלא', num(st.newClients, 1)],
         ['פי כמה', `פי ${num(Math.max(1, ratio), 1)}`],
         [`צמיחה בכל חודש, ${fc.ramp} חודשים`, `${num(monthly)}%`, true],
@@ -494,7 +508,7 @@ export function fixes(s) {
   }
 
   // Cut the biggest expense that is not a must.
-  const cut = [...s.expenses].filter((x) => x.category === 'marketing' || x.category === 'tools').sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
+  const cut = [...s.expenses].filter((x) => !x.flowbiz && x.category === 'marketing' || x.category === 'tools').sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
   if (cut && monthlyCost(cut) >= 150) {
     c.push({ id: 'cut', icon: 'scissors', title: `לוותר על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש`, make: (x) => ({ ...freeze(x), expenses: x.expenses.filter((e) => e.id !== cut.id) }) });
   }
