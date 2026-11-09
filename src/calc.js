@@ -11,12 +11,13 @@
 //     A program over several months spreads its hours over those months.
 //   - Plan back: new clients / close rate = calls; calls / lead-to-call rate = leads.
 //   - Forecast, 12 months from next month: sales grow from the start point (0 in stage 1,
-//     today's average in stages 2-3) to the regular month within the ramp months, in a
-//     straight line. Money arrives by the payment terms (1, 2 or 3 payments).
+//     today's average in stages 2-3) to a full month (the whole mix) within the ramp
+//     months, in a straight line. A program paid each month brings price / months each
+//     month; everything else arrives in the month of the sale.
 //   - The cash line: the owner takes out what the month left, up to the goal; a loss
 //     comes out of the business's money; what is above the goal stays in the business.
 //     In stage 3 the cushion set-aside comes first, until the cushion is full.
-import { SETTINGS, TERMS, FIRST_MONTH, TODAY } from './data.js';
+import { SETTINGS, FIRST_MONTH, TODAY } from './data.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const SHORT = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -51,17 +52,28 @@ export const startIndex = (x) => (!x.start || x.start === 'now' ? 0 : Math.max(0
 export const fixedMonthly = (s) => s.expenses.reduce((t, x) => t + monthlyCost(x), 0);
 const fixedIn = (s, i) => s.expenses.reduce((t, x) => t + (i >= startIndex(x) ? monthlyCost(x) : 0), 0);
 
-// ---------- setup budget (stage 1) ----------
+// ---------- setup (the finance center's budget table) ----------
+// Each item: planned, paid so far, and "paid in full". The budget (stage 1 only) that is
+// not split into items yet is still money that will go out, so it counts as left to pay.
 
-export const paidOf = (it) => (it.paid === 'all' ? it.planned : it.paid === 'part' ? Math.min(it.paidAmount || 0, it.planned) : 0);
+export const itemLeft = (x) => (x.done ? 0 : Math.max(0, (x.planned || 0) - (x.spent || 0)));
 export function setupSummary(s) {
-  const planned = s.setup.reduce((t, it) => t + (it.planned || 0), 0);
-  const paid = s.setup.reduce((t, it) => t + paidOf(it), 0);
-  const budget = s.setupBudget || 0;
-  const reserve = Math.max(0, budget - planned);
-  return { budget, planned, paid, reserve, left: planned - paid + reserve, over: Math.max(0, planned - budget) };
+  const items = s.setup;
+  const allocated = items.reduce((t, x) => t + (x.planned || 0), 0);
+  const spent = items.reduce((t, x) => t + (x.spent || 0), 0);
+  const overItems = items.filter((x) => (x.spent || 0) > (x.planned || 0));
+  const over = overItems.reduce((t, x) => t + x.spent - x.planned, 0);
+  const itemsLeft = items.reduce((t, x) => t + itemLeft(x), 0);
+  const withBudget = s.stage === 'setup';
+  const budget = withBudget ? s.setupBudget || 0 : 0;
+  const unallocated = withBudget ? Math.max(0, budget - allocated - over) : 0;
+  const remaining = itemsLeft + unallocated;
+  const final = spent + remaining;
+  return { items, budget, withBudget, allocated, spent, over, overItems, unallocated, remaining, final, overBudget: withBudget && s.setupBudget != null ? Math.max(0, final - budget) : 0 };
 }
-export const setupLeftToPay = (s) => (s.stage === 'setup' ? setupSummary(s).left : s.setupDone === false ? s.setupLeft || 0 : 0);
+export const setupLeftToPay = (s) => (s.stage === 'setup' || s.setupDone === false ? setupSummary(s).remaining : 0);
+// What FlowBiz saves (shown, never counted).
+export const savedOf = (list) => list.reduce((t, x) => t + x.value, 0);
 
 // ---------- prices ----------
 
@@ -72,9 +84,9 @@ export const profitPerSale = (s, p) => netPrice(s, p) - (p.cost || 0);
 export const perHour = (s, p) => (p.hours > 0 ? profitPerSale(s, p) / p.hours : null);
 export const paidProducts = (s) => s.products.filter((p) => !p.free && p.price > 0);
 export const missingOf = (p) => [p.price == null && 'מחיר', p.cost == null && 'עלות', p.hours == null && 'שעות'].filter(Boolean);
-export const termsOf = (id) => TERMS.find((t) => t.id === id) || TERMS[0];
-// How many monthly payments a sale is paid in.
-const paymentsOf = (p) => (p.kind === 'monthly' ? 1 : p.terms === 'monthly' ? p.months || 1 : termsOf(p.terms).n);
+// In how many months the money of one sale arrives: a program paid each month spreads
+// over its months; anything else arrives at once (card installments are the client's).
+export const paymentsOf = (p) => (p.kind === 'program' && p.pay === 'monthly' ? p.months || 1 : 1);
 const callHours = (s) => s.products.find((p) => p.id === 'e1')?.hours ?? 0.5;
 export const taxRate = (s) => (s.taxPct ?? 0) / 100;
 
@@ -273,10 +285,20 @@ export function checks(s, mix, fc) {
 
   // 1. The goal.
   const gap = goal + st.setAside - st.profit;
+  const goalHow = [
+    ['הכנסות בחודש מלא (כל התמהיל)', fmt(st.income)],
+    ['פחות עלויות המוצרים', fmt(-st.cogs)],
+    ['פחות הוצאות קבועות', fmt(-st.fixed)],
+    [`פחות הפרשה למס (${s.taxPct}%)`, fmt(-st.tax)],
+    st.setAside > 0 && ['פחות לכרית הביטחון', fmt(-st.setAside)],
+    ['נשאר לך', fmt(st.profit - st.setAside), true],
+    ['היעד', fmt(goal)],
+  ].filter(Boolean);
+  const goalRule = 'ירוק: בחודש מלא נשאר לך לפחות היעד, ומגיעים לזה בתוך השנה. אדום: גם בחודש מלא נשאר פחות מהיעד.';
   out.push(
     gap <= 0
-      ? { id: 'goal', q: 'מגיעים ליעד?', tone: fc.goalIdx >= 0 ? 'ok' : 'warn', a: fc.goalIdx >= 0 ? `כן, מ${monthName(fc.rows[fc.goalIdx].key)}` : 'רק אחרי השנה הראשונה', sub: `בחודש רגיל נשארים ${fmt(st.profit)}, היעד ${fmt(goal)}` }
-      : { id: 'goal', q: 'מגיעים ליעד?', tone: 'bad', a: `חסרים ${fmt(gap)} בחודש`, sub: `בחודש רגיל נשארים ${fmt(st.profit)}, היעד ${fmt(goal)}${st.setAside ? ` ועוד ${fmt(st.setAside)} לכרית` : ''}` },
+      ? { id: 'goal', q: 'מגיעים ליעד?', tone: fc.goalIdx >= 0 ? 'ok' : 'warn', a: fc.goalIdx >= 0 ? `כן, החל מ${monthYear(fc.rows[fc.goalIdx].key)}` : 'רק אחרי השנה הראשונה', sub: `בחודש מלא נשארים ${fmt(st.profit - st.setAside)}, היעד ${fmt(goal)}`, how: goalHow, rule: goalRule }
+      : { id: 'goal', q: 'מגיעים ליעד?', tone: 'bad', a: `חסרים ${fmt(gap)} בחודש`, sub: `בחודש מלא נשארים ${fmt(st.profit - st.setAside)}, היעד ${fmt(goal)}`, how: goalHow, rule: goalRule },
   );
 
   // 2. The hours: what each work hour has to earn, against what the basket earns.
@@ -289,23 +311,54 @@ export function checks(s, mix, fc) {
     a: timeTone === 'bad' ? `צריך ${num(st.hours)} שעות, יש ${num(avail)}` : `${num(st.hours)} מתוך ${num(avail)} שעות בחודש`,
     sub: `כל שעת עבודה צריכה להכניס ${fmt(needPerHour)}. הסל שלך מכניס ${fmt(st.perHour)} לשעה`,
     needPerHour,
+    how: [
+      ['שעות עבודה עם לקוחות (התמהיל)', `${num(st.work)} שעות`],
+      [`שיחות מכירה: ${num(st.calls, 1)} שיחות × ${num(callHours(s) * 60)} דקות`, `${num(st.callH, 1)} שעות`],
+      ['סה"כ צריך', `${num(st.hours)} שעות`, true],
+      ['יש לך בחודש', `${num(avail)} שעות`],
+    ],
+    rule: 'ירוק: עד 90% מהשעות שיש לך. כתום: בין 90% ל-100%, אין מקום לחודש עמוס. אדום: צריך יותר שעות ממה שיש.',
   });
 
   // 3. The money on the way.
   const low = fc.minRow;
   const cashTone = low.cash < 0 ? 'bad' : s.stage === 'active' && low.cash < fc.cushion ? 'warn' : 'ok';
+  const upTo = fc.rows.slice(0, fc.rows.indexOf(low) + 1);
+  const sum = (k) => upTo.reduce((x, r) => x + r[k], 0);
+  const setupLeft = setupLeftToPay(s);
   out.push({
     id: 'cash',
     q: 'הכסף מחזיק בדרך?',
     tone: cashTone,
     a: low.cash < 0 ? `ב${monthName(low.key)} הכסף נגמר` : cashTone === 'warn' ? 'מחזיק, אבל מתחת לכרית' : 'כן, לאורך כל השנה',
     sub: `הכי נמוך: ${fmt(low.cash)} ב${monthName(low.key)}`,
+    how: [
+      ['בעסק היום', fmt(fc.startCash)],
+      setupLeft > 0 && ['פחות מה שנשאר לשלם על ההקמה', fmt(-setupLeft)],
+      [`נכנס מלקוחות עד ${monthName(low.key)}`, fmt(sum('income'))],
+      ['פחות הוצאות, עלויות המוצרים ומס', fmt(-(sum('fixed') + sum('cogs') + sum('tax')))],
+      ['פחות מה שיוצא אליך (עד גובה היעד)', fmt(-sum('draw'))],
+      [`בעסק ב${monthName(low.key)}, הנקודה הכי נמוכה`, fmt(low.cash), true],
+    ].filter(Boolean),
+    rule: `ירוק: הכסף בעסק לא יורד מתחת לאפס באף חודש.${s.stage === 'active' ? ' כתום: יורד מתחת לכרית הביטחון.' : ''} אדום: בחודש כלשהו הכסף נגמר. כל חודש יוצא אליך מה שהחודש השאיר, עד גובה היעד.`,
   });
 
   // 4. The pace (stages 2-3): how much faster than today, and per month.
   const today = todayAvg(s);
   if (s.stage === 'setup' || !today || today.clients <= 0) {
-    out.push({ id: 'pace', q: 'הקצב סביר?', tone: 'info', a: `${num(st.newClients, 1)} לקוחות חדשים בחודש`, sub: `מגיעים לזה תוך ${fc.ramp} חודשים. בלי לקוחות עדיין, אין למה להשוות` });
+    out.push({
+      id: 'pace',
+      q: 'הקצב סביר?',
+      tone: 'info',
+      a: `${num(st.newClients, 1)} לקוחות חדשים בחודש`,
+      sub: `מגיעים לזה תוך ${fc.ramp} חודשים. בלי לקוחות עדיין, אין למה להשוות`,
+      how: [
+        ['פניות שמגיעות אליך בחודש', num(st.leads)],
+        [`${s.assumptions.leadToCall}% מהן קובעות שיחה`, `${num(st.calls, 1)} שיחות`],
+        [`${s.assumptions.closeRate}% מהשיחות קונות`, `${num(st.newClients, 1)} לקוחות`, true],
+      ],
+      rule: 'בלי לקוחות עדיין זו בדיקה למידע בלבד, היא לא משנה את השורה התחתונה. מחלק 4: כמה פניות צריך כדי שזה יקרה.',
+    });
   } else {
     const ratio = st.newClients / today.clients;
     const monthly = ratio > 1 ? (Math.pow(ratio, 1 / fc.ramp) - 1) * 100 : 0;
@@ -317,6 +370,13 @@ export function checks(s, mix, fc) {
       a: ratio <= 1 ? 'כן, כמו היום' : `פי ${num(ratio, 1)} ממה שיש היום`,
       sub: `היום ${clientsText(today.clients)} בחודש, צריך ${num(st.newClients, 1)}${ratio > 1 ? `: עוד ${num(monthly)}% בכל חודש, ${fc.ramp} חודשים` : ''}`,
       ratio,
+      how: [
+        ['לקוחות חדשים בחודש היום (ממוצע 6 חודשים)', num(today.clients, 1)],
+        ['צריך בחודש מלא', num(st.newClients, 1)],
+        ['פי כמה', `פי ${num(Math.max(1, ratio), 1)}`],
+        [`צמיחה בכל חודש, ${fc.ramp} חודשים`, `${num(monthly)}%`, true],
+      ],
+      rule: 'ירוק: עד 10% יותר לקוחות בכל חודש. כתום: עד 20%. אדום: יותר מזה, קצב שרוב העסקים לא מחזיקים.',
     });
   }
   return out;
@@ -331,7 +391,7 @@ export function verdict(list) {
   return { tone: 'ok', title: 'המודל עובד', cause: 'מגיעים ליעד, בשעות שיש לך, והכסף מחזיק לאורך כל הדרך.' };
 }
 function causeOf(c) {
-  if (c.id === 'goal') return c.tone === 'bad' ? `גם בחודש רגיל ${c.a.replace('חסרים', 'חסרים עוד')} כדי להגיע ליעד.` : 'היעד מגיע, אבל רק אחרי השנה הראשונה.';
+  if (c.id === 'goal') return c.tone === 'bad' ? `גם בחודש מלא ${c.a.replace('חסרים', 'חסרים עוד')} כדי להגיע ליעד.` : 'היעד מגיע, אבל רק אחרי השנה הראשונה.';
   if (c.id === 'time') return c.tone === 'bad' ? `כדי להגיע ליעד ${c.a.replace('צריך', 'צריך')} בחודש.` : 'השעות כמעט מלאות, אין מקום לחודש עמוס.';
   if (c.id === 'cash') return c.tone === 'bad' ? `${c.a} לפני שההכנסה מספיקה.` : 'הכסף בעסק יורד מתחת לכרית הביטחון בדרך.';
   return `הקצב גבוה: ${c.a}, ${c.sub.split(': ')[1] || ''}.`;
@@ -421,10 +481,10 @@ export function fixes(s) {
     });
   }
 
-  // More time to reach a regular month (gentler pace, and a softer start for the cash).
+  // More time to reach a full month (gentler pace, and a softer start for the cash).
   if ((s.ramp || 6) < 12 && (byId.pace.tone === 'warn' || byId.pace.tone === 'bad' || byId.cash.tone !== 'ok')) {
     const to = Math.min(12, (s.ramp || 6) + 3);
-    c.push({ id: 'time-more', icon: 'calendar-plus', title: `${to} חודשים להגיע לחודש רגיל`, sub: `במקום ${s.ramp || 6}. הקצב בכל חודש יורד`, make: (x) => ({ ...freeze(x), ramp: to }) });
+    c.push({ id: 'time-more', icon: 'calendar-plus', title: `${to} חודשים להגיע ליעד ההכנסה`, sub: `במקום ${s.ramp || 6}. הקצב בכל חודש יורד`, make: (x) => ({ ...freeze(x), ramp: to }) });
   }
 
   // Another goal for the first year: what this mix really leaves.

@@ -3,7 +3,8 @@
 import { html, useEffect, Icon, PencilLine, cx, confetti } from './lib.js';
 import { Button, Note, SharkAvatar } from './components.js';
 import { Tag, Sheet } from './ui.js';
-import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, TERMS, FINANCE_URL, FINANCE_SCENARIO } from './data.js';
+import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, FINANCE_URL, FINANCE_SCENARIO } from './data.js';
+import { cashText } from './parts.js';
 import {
   fmt, num, monthYear, todayText, todayAvg, runway, fixedMonthly, setupSummary, cushionTarget, setAsideMonthly,
   paidProducts, netPrice, perHour, isLicensed,
@@ -42,7 +43,7 @@ export function DocScreen({ s, m }) {
       <${H} n="1">המצב היום<//>
       <table class="w-full text-[15px]"><tbody>
         <${Row} k=${s.bank.has ? 'בחשבון הבנק של העסק' : 'הכסף של העסק'} v=${fmt(s.bank.amount)} />
-        ${s.stage === 'setup' && html`<${Row} k="תקציב ההקמה" v=${`${fmt(setupSummary(s).budget)} · שולם ${fmt(setupSummary(s).paid)}`} />`}
+        ${s.stage === 'setup' && html`<${Row} k="תקציב ההקמה" v=${`${fmt(setupSummary(s).budget)} · שולם ${fmt(setupSummary(s).spent)} · נשאר ${fmt(setupSummary(s).remaining)}`} />`}
         ${avg && html`<${Row} k="חודש ממוצע היום" v=${`נכנס ${fmt(avg.income)} · נשאר ${fmt(avg.left)}`} />`}
         ${s.stage !== 'setup' && html`<${Row} k="כסף שעוד מגיע מלקוחות" v=${fmt((s.toCome.now || 0) + (s.toCome.next || 0) + (s.toCome.later || 0))} />`}
         ${s.stage === 'active' && html`<${Row} k="הכנסה קבועה" v=${`${fmt(s.regular.amount)} ב-${s.regular.day} לחודש`} />`}
@@ -52,8 +53,8 @@ export function DocScreen({ s, m }) {
 
       <${H} n="2">המחירים<//>
       <table class="w-full text-[14px]">
-        <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">מוצר</th><th class="pb-1 text-start">מחיר</th><th class="pb-1 text-start">איך משלמים</th><th class="pb-1 text-end">לשעת עבודה</th></tr></thead>
-        <tbody>${ps.map((p) => html`<tr key=${p.id} class="border-t border-line"><td class="py-1.5 pe-2 font-bold">${p.name}</td><td class="py-1.5 tabular-nums">${fmt(p.price)}${p.kind === 'monthly' ? ' לחודש' : ''}</td><td class="py-1.5">${TERMS.find((t) => t.id === p.terms)?.label}</td><td class="py-1.5 text-end tabular-nums">${fmt(perHour(s, p))}</td></tr>`)}</tbody>
+        <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">מוצר</th><th class="pb-1 text-start">מחיר</th><th class="pb-1 text-start">מתי הכסף נכנס</th><th class="pb-1 text-end">לשעת עבודה</th></tr></thead>
+        <tbody>${ps.map((p) => html`<tr key=${p.id} class="border-t border-line"><td class="py-1.5 pe-2 font-bold">${p.name}</td><td class="py-1.5 tabular-nums">${fmt(p.price)}${p.kind === 'monthly' ? ' לחודש' : ''}</td><td class="py-1.5 pe-2">${cashText(p)}</td><td class="py-1.5 text-end tabular-nums">${fmt(perHour(s, p))}</td></tr>`)}</tbody>
       </table>
       ${isLicensed(s) && html`<p class="mt-1 text-[13px] text-muted">המחירים כוללים מע"מ ${SETTINGS.vatPct}%. החישובים לוקחים רק את מה שנשאר לעסק.</p>`}
 
@@ -67,25 +68,25 @@ export function DocScreen({ s, m }) {
       ${s.stage === 'active' && html`<div class="mt-3"><${Quarters} fc=${fc} /></div>`}
 
       <${H} n="4">כמה צריך למכור<//>
-      <p class="mb-2 text-[15px]">העסק צריך להכניס <b>${fmt(st.needed)}</b> בחודש רגיל. התמהיל:</p>
+      <p class="mb-2 text-[15px]">העסק צריך להכניס <b>${fmt(st.needed)}</b> בחודש מלא. התמהיל:</p>
       <ul class="mb-2 flex flex-wrap gap-2">${ps.filter((p) => m.mix[p.id]).map((p) => html`<li key=${p.id}><${Tag} tone="blue">${m.mix[p.id]} × ${p.short}${p.kind === 'monthly' ? ' (פעילים)' : ''}<//></li>`)}</ul>
       <table class="w-full text-[15px]"><tbody>
-        <${Row} k="לידים בחודש" v=${`${num(st.leads)} (${num((st.leads * 12) / 52, 1)} בשבוע)`} />
+        <${Row} k="פניות שצריכות להגיע אליך בחודש" v=${`${num(st.leads)} (${num((st.leads * 12) / 52, 1)} בשבוע)`} />
         <${Row} k="שיחות מכירה בחודש" v=${`${num(st.calls, 1)} (${num((st.calls * 12) / 52, 1)} בשבוע)`} />
         <${Row} k="לקוחות חדשים בחודש" v=${num(st.newClients, 1)} />
         <${Row} k="שעות עבודה בחודש" v=${`${num(st.hours)} מתוך ${num(s.assumptions.hoursMonth)}`} />
       </tbody></table>
-      <p class="mt-1 text-[13px] text-muted">הנחות: ${s.assumptions.leadToCall}% מהלידים קובעים שיחה, ${s.assumptions.closeRate}% מהשיחות קונים, לקוח חודשי נשאר ${s.assumptions.stayMonths} חודשים.</p>
+      <p class="mt-1 text-[13px] text-muted">החישוב מבוסס על: ${s.assumptions.leadToCall}% מהפניות קובעות שיחה, ${s.assumptions.closeRate}% מהשיחות קונות, לקוח חודשי נשאר ${s.assumptions.stayMonths} חודשים (ממוצעים בתחום, אפשר לשנות).</p>
 
       <${H} n="5">התחזית לשנה<//>
       <${ForecastChart} fc=${fc} goal=${s.goal} />
       <div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>
-      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים לחודש רגיל תוך ${s.ramp} חודשים.</p>
-      <div class="mt-3"><${Checks} list=${m.checks} /></div>
+      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), תוך ${s.ramp} חודשים.</p>
+      <div class="mt-3"><${Checks} list=${m.checks} how=${false} /></div>
       ${s.applied.length > 0 &&
       html`<p class="mt-3 text-[15px] font-bold">מה שינית בדרך</p>
         <ul class="list-disc ps-5 text-[14px]">${s.applied.map((a) => html`<li key=${a.id + a.at}>${a.title}</li>`)}</ul>`}
-      <p class="mt-5 border-t border-line pt-3 text-[12px] text-muted">תחזית היא לא הבטחה. המספרים מחושבים מהנתונים וההנחות שבתוכנית, וההפרשה למס היא הערכה ולא ייעוץ מס.</p>
+      <p class="mt-5 border-t border-line pt-3 text-[12px] text-muted">תחזית היא לא הבטחה. המספרים מחושבים מהנתונים והאחוזים שבתוכנית, וההפרשה למס היא הערכה ולא ייעוץ מס.</p>
     </article>
   </div>`;
 }
@@ -100,7 +101,7 @@ export function Done({ s }) {
     <div>
       <p class="fb-eyebrow mb-1">סיימת את פרק 2 · ${STEP.chapter}</p>
       <h1 class="fb-h1 mb-4 text-[28px] md:text-[36px]">יש לך <span class="marker">תוכנית</span> עם מספרים</h1>
-      <p class="mb-4 max-w-[48ch] text-[17px]">המספרים מהשלב כבר במרכז הפיננסי, על לוח "${stage.board}". משם עוקבים מה קורה בפועל מול התוכנית.</p>
+      <p class="mb-4 max-w-[48ch] text-[17px]">${g('אתה יודע', 'את יודעת')} כמה צריך למכור, מאיזה מוצרים, ומה קורה לכסף בכל חודש של השנה הקרובה. בעמוד הכספים רואים אם זה קורה בפועל.</p>
       <div class="flex flex-col gap-2">
         ${[
           ['badge-check', 'תג חדש', g('המתכנן', 'המתכננת')],
@@ -172,7 +173,7 @@ export function Home({ s, go, onPaywall, onFinance }) {
         </section>
         <section class="fb-panel !p-4">
           <h2 class="fb-h3 mb-1 flex items-center gap-2">${!done && html`<${Icon} name="lock" size=${16} class="text-muted" />`}המרכז הפיננסי</h2>
-          <p class="mb-2 text-[14px]">${done ? `נפתח על לוח "${stageOf(s.stage).board}".` : 'נפתח בסוף "העסק במספרים".'}</p>
+          <p class="mb-2 text-[14px]">${done ? 'נפתח. שם רואים אם התוכנית קורית בפועל.' : 'נפתח בסוף "העסק במספרים".'}</p>
           ${done && html`<${Button} variant="text" class="!h-auto !p-0" onClick=${onFinance}>לעמוד הכספים<//>`}
         </section>
       </div>
@@ -189,6 +190,5 @@ export function Paywall({ onClose }) {
         <p class="mb-3 text-[15px]">פרקים 3 עד 6: בניית מותג אישי, מביאים לקוחות, מגדילים מכירות, והעסק שתמיד רצית. כל שלב בונה על התוכנית שעשית עכשיו.</p>
       </div>
     </div>
-    <p class="rounded-xl bg-canvas p-3 text-[13px] text-muted">במוק-אפ: כאן נפתח מסך התשלום הקיים במערכת, בלי שינוי. המשימה רק קובעת שהוא נפתח אחרי שלב 5 ובלחיצה על פרק 3.</p>
   <//>`;
 }

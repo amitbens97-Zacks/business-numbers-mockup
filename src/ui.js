@@ -1,5 +1,6 @@
 // Shared pieces: windows (sheets), fields, choice chips, tags.
-import { html, useEffect, Icon, cx } from './lib.js';
+import { html, useState, useEffect, useRef, Icon, cx } from './lib.js';
+import { fmt } from './calc.js';
 
 export function Sheet({ title, onClose, children, footer, wide, full }) {
   useEffect(() => {
@@ -100,4 +101,65 @@ export function BrowserFrame({ url, children, class: cls = '', mobile }) {
     </div>`}
     ${children}
   </div>`;
+}
+
+// ---------- numbers that change in place (as in the finance center) ----------
+
+// A number set in display type.
+export const Num = ({ n, class: cls = '' }) => html`<span class=${cx('font-display font-extrabold tabular-nums text-ink', cls)}>${fmt(n)}</span>`;
+
+// A number that changes in place: click (or Enter on it), type, Enter to save, Esc to
+// leave it as it was. The dashed underline and the pencil say "you can change this".
+// `quiet` (for table cells) shows the pencil only on hover or focus.
+export function NumEdit({ value, onSave, label, unit = '₪', quiet, empty = 'לכתוב סכום', class: cls = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef();
+  useEffect(() => {
+    if (editing) {
+      ref.current?.focus();
+      ref.current?.select();
+    }
+  }, [editing]);
+  const shown = value == null ? null : unit === '%' ? `${value}%` : unit === '₪' ? fmt(value) : `${value} ${unit}`;
+  const commit = () => {
+    setEditing(false);
+    const v = Math.max(0, Math.round(Number(draft)));
+    if (draft !== '' && draft != null && !Number.isNaN(v) && v !== value) onSave(v);
+  };
+  if (editing)
+    return html`<span class="relative inline-flex" dir="ltr">
+      <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[0.6em] font-bold text-muted">${unit}</span>
+      <input
+        ref=${ref}
+        type="number"
+        inputmode="numeric"
+        aria-label=${label}
+        value=${draft ?? ''}
+        onInput=${(e) => setDraft(e.target.value)}
+        onBlur=${commit}
+        onKeyDown=${(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            commit();
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            setEditing(false);
+          }
+        }}
+        class=${cx('w-[6.5em] rounded-lg border-[1.5px] border-brand-600 bg-white py-0.5 pe-2 ps-7 text-left font-display font-extrabold tabular-nums text-ink outline-none ring-4 ring-brand-100', cls)}
+      />
+    </span>`;
+  return html`<button
+    type="button"
+    title="לשינוי"
+    aria-label=${`${label}: ${shown ?? 'עוד לא נכתב'}. לשינוי`}
+    onClick=${() => {
+      setDraft(value);
+      setEditing(true);
+    }}
+    class=${cx('group -mx-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-1 font-display font-extrabold text-ink underline decoration-brand-300 decoration-dashed decoration-[1.5px] underline-offset-[6px] hover:bg-brand-50 hover:decoration-brand-600 cursor-pointer', cls)}
+  >${shown ?? html`<span class="font-sans text-[15px] font-bold text-brand-600">${empty}</span>`}<${Icon} name="pencil" size=${14} class=${cx('shrink-0 text-brand-600 group-hover:opacity-100 group-focus-visible:opacity-100', quiet && shown ? 'opacity-0' : 'opacity-50')} /></button>`;
 }

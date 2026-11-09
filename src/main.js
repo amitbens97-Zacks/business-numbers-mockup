@@ -8,7 +8,8 @@ import { html, render, useState, useEffect, useRef, Icon, cx } from './lib.js';
 import { Logo, PartnerBubble, Progress, TopBar, BottomBar, Status, PrimaryButton, Button, Toast } from './components.js';
 import { STEP, PARTS, STEP_SCREENS, SCENARIOS, DEFAULT_SCENARIO, g } from './data.js';
 import { model, missingOf, paidProducts, todayText } from './calc.js';
-import { Opening, StageScreen, TodayScreen, PricesScreen } from './parts.js';
+import { Opening, StageScreen, PricesScreen } from './parts.js';
+import { TodayScreen, ALL_SECTIONS } from './today.js';
 import { GoalScreen, SellScreen, ForecastScreen } from './plan.js';
 import { DocScreen, Done, Home, Paywall, financeLink } from './finish.js';
 import { DevPanel } from './devnotes.js';
@@ -23,21 +24,25 @@ function makeScenario(id) {
   return sc.make();
 }
 
-// A direct link (or a jump in the developer panel) past a part fills what that part
-// would have asked, so every screen opens with numbers.
+// The first entry is empty. A direct link (or a jump in the developer panel) past part 1
+// fills it with the scenario's demo, so every later screen opens with numbers.
 const DEMO_MONTHS = [[0, 0], [890, 1], [3900, 1], [890, 1], [2500, 1], [6290, 2]];
-function fillTo(st, screen) {
+function fillTo(st, screen, scenarioId) {
   const at = SCREENS.indexOf(screen);
   if (at > SCREENS.indexOf('today')) {
-    if (st.history.months.some((x) => x.income == null)) {
+    if (st.bank.amount == null) (SCENARIOS.find((x) => x.id === scenarioId) || SCENARIOS[0]).demo(st);
+    if (st.stage !== 'setup' && st.history.months.some((x) => x.income == null)) {
       st.history.mode = st.history.mode || 'manual';
       st.history.months.forEach((x, i) => {
         x.income = x.income ?? DEMO_MONTHS[i][0];
         x.clients = x.clients ?? DEMO_MONTHS[i][1];
       });
     }
-    if (st.bank.has == null && st.bank.amount == null) st.bank = { has: true, amount: 8000 };
+    if (st.bank.has == null) st.bank.has = true;
     if (st.setupBudget == null && st.stage === 'setup') st.setupBudget = 0;
+    if (st.setupDone == null) st.setupDone = true;
+    if (st.stage === 'active' && st.regular.amount == null) st.regular.amount = 0;
+    st.seen = [...ALL_SECTIONS];
   }
   if (at > SCREENS.indexOf('prices')) st.products.forEach((p) => p.cost == null && (p.cost = 60));
   return st;
@@ -53,15 +58,15 @@ const partOf = (screen) => (screen === 'stage' || screen === 'today' ? 0 : STEP_
 
 function sharkLine(screen, s, m) {
   return {
-    opening: 'עסק בלי מספרים הוא ניחוש. נעשה את זה פעם אחת ביחד, ומשם המרכז הפיננסי ממשיך לעקוב בשבילך.',
+    opening: g('עסק בלי מספרים הוא ניחוש. נעשה את זה פעם אחת ביחד, ובסוף תדע בדיוק איפה אתה עומד.', 'עסק בלי מספרים הוא ניחוש. נעשה את זה פעם אחת ביחד, ובסוף תדעי בדיוק איפה את עומדת.'),
     stage: g('אין כאן תשובה לא נכונה. לפי מה שתבחר, אשאל רק את מה שצריך.', 'אין כאן תשובה לא נכונה. לפי מה שתבחרי, אשאל רק את מה שצריך.'),
     today: s.stage === 'setup'
-      ? 'הוספתי הצעות להוצאות שיועצי שיווק משלמים בדרך כלל. מה שלא רלוונטי, פשוט לא להוסיף.'
+      ? 'מה ש-FlowBiz בונה איתך, כמו הלוגו ודף הנחיתה, לא יוצא מהתקציב. הוספתי גם הצעות למה שיועצי שיווק מוציאים בדרך כלל. מה שלא רלוונטי, פשוט לא להוסיף.'
       : g('יש לך דוח רווח והפסד מרואה החשבון? אני אקרא אותו ואחסוך לך את ההקלדה.', 'יש לך דוח רווח והפסד מרואה החשבון? אני אקרא אותו ואחסוך לך את ההקלדה.'),
     prices: g('שים לב לשורה "כמה אתה מרוויח על שעת עבודה". זה המספר שמחליט איזה מוצר כדאי למכור יותר.', 'שימי לב לשורה "כמה את מרוויחה על שעת עבודה". זה המספר שמחליט איזה מוצר כדאי למכור יותר.'),
     goal: 'היעד הוא מה שנשאר לך, לא מה שנכנס. את הדרך מהיעד להכנסות אני מחשב בחלק הבא.',
     sell: 'הצעתי תמהיל לפי הרווח לשעה ולפי השעות שיש לך. אפשר לשחק עם המספרים, והכל מתעדכן.',
-    forecast: m.verdict.tone === 'ok' ? 'המודל עובד. מכאן זה עניין של ביצוע, והמרכז הפיננסי יראה לך אם התוכנית מתקיימת.' : 'משהו לא מסתדר, ובשביל זה בדיוק בודקים עכשיו ולא אחרי שנה. בחרתי את השינויים שהכי משפיעים.',
+    forecast: m.verdict.tone === 'ok' ? 'המודל עובד. מכאן זה עניין של ביצוע: להביא את הפניות, ולסגור.' : 'משהו לא מסתדר, ובשביל זה בדיוק בודקים עכשיו ולא אחרי שנה. בחרתי את השינויים שהכי משפיעים.',
     doc: 'זו התוכנית שלך. היא נשמרת, ואפשר לחזור ולעדכן אותה בכל פעם שהעסק משתנה.',
     home: 'פרק 2 מאחוריך. יש לך מספרים שעובדים, עכשיו בונים את המותג.',
   }[screen];
@@ -76,8 +81,8 @@ function reasonOf(screen, s, m) {
     if (s.stage !== 'setup') {
       if (!s.history.mode && s.history.months.some((x) => x.income == null)) return 'צריך את ששת החודשים האחרונים';
       if (s.history.months.some((x) => x.income == null)) return 'חסרות הכנסות בחלק מהחודשים';
-      if (s.setupDone == null) return 'צריך לענות אם ההקמה הסתיימה';
       if (s.stage === 'active' && s.regular.amount == null) return 'צריך את ההכנסה הקבועה';
+      if (s.setupDone == null) return 'צריך לענות אם ההקמה הסתיימה';
     }
   }
   if (screen === 'prices') {
@@ -103,7 +108,7 @@ function App({ view: shellView, onViewChange }) {
     // A direct link into the step (past the stage question) needs a stage.
     if (!['opening', 'stage'].includes(route.screen) && route.view === 'step') st.stage = SCENARIOS.find((x) => x.id === scenario).stage;
     if (route.view === 'home') st.stage = SCENARIOS.find((x) => x.id === scenario).stage;
-    return fillTo(st, route.view === 'home' ? 'done' : route.screen);
+    return fillTo(st, route.view === 'home' ? 'done' : route.screen, scenario);
   });
   const [maxPart, setMaxPart] = useState(handoff?.maxPart ?? 0);
   const [toast, setToast] = useState(null);
@@ -185,7 +190,7 @@ function App({ view: shellView, onViewChange }) {
     if (id === 'home') return go({ view: 'home' });
     up((d) => {
       if (!['opening', 'stage'].includes(id) && !d.stage) d.stage = SCENARIOS.find((x) => x.id === scenario).stage;
-      fillTo(d, id);
+      fillTo(d, id, scenario);
     });
     setMaxPart(4);
     toScreen(id);
@@ -246,10 +251,15 @@ function App({ view: shellView, onViewChange }) {
   const order = SCREENS;
   const next = order[order.indexOf(screen) + 1];
   const prevScreen = order[order.indexOf(screen) - 1];
+  // Picking where the business stands moves on by itself, after a short pause.
+  const onPicked = () => {
+    clearTimeout(timers.current.auto);
+    timers.current.auto = setTimeout(() => toScreen('today'), 650);
+  };
   const props = { s, up, m, notify, undoTo, onStage: () => toScreen('stage') };
   const body = {
     opening: html`<${Opening} />`,
-    stage: html`<${StageScreen} ...${props} />`,
+    stage: html`<${StageScreen} ...${props} onPicked=${onPicked} />`,
     today: html`<${TodayScreen} ...${props} />`,
     prices: html`<${PricesScreen} ...${props} />`,
     goal: html`<${GoalScreen} ...${props} />`,

@@ -2,7 +2,9 @@
 //   products, prices, costs, hours  -> "סל מוצרים" (3); edits here write back to the basket
 //   the monthly goal, hours a month  -> "אני והעסק" (2)
 //   expenses, setup items, money     -> the finance center's tables (one data source)
-//   payment terms                    -> asked here, prefilled in "בניית הצעה מנצחת" (8)
+//   when the money arrives           -> asked here (a program: all at the start, or each month)
+// The first entry is empty: only what earlier steps collected (the basket, the goal, the
+// hours) is filled. Each scenario's `demo` fills part 1 for direct links and dev jumps.
 // The mockup's "today" is fixed so every date on the page stays the same.
 
 export const PARTNER = { name: 'הכריש', role: 'השותף העסקי' };
@@ -66,11 +68,11 @@ export const ENTITIES = [
   { id: 'licensed', label: 'עוסק מורשה' },
 ];
 
-export const TERMS = [
-  { id: 'one', label: 'תשלום אחד', n: 1 },
-  { id: 'two', label: '2 תשלומים', n: 2 },
-  { id: 'three', label: '3 תשלומים', n: 3 },
-  { id: 'monthly', label: 'מנוי חודשי', n: 0 },
+// When the money of a program reaches the business. Card installments are between the
+// client and the card company; what counts here is when the money reaches the business.
+export const PAY = [
+  { id: 'start', label: 'הכל בהתחלה' },
+  { id: 'monthly', label: 'כל חודש, לאורך התוכנית' },
 ];
 
 export const CATEGORIES = {
@@ -92,24 +94,50 @@ export const FREQS = [
 // (Morning, Calendly, Smoove and the like).
 export const SHARK_EXPENSES = [
   { name: 'Zoom', amount: 60, category: 'tools', freq: 'monthly', day: 1 },
-  { name: 'Canva ואחסון אתר', amount: 110, category: 'tools', freq: 'monthly', day: 1 },
+  { name: 'Canva', amount: 55, category: 'tools', freq: 'monthly', day: 1 },
   { name: 'הנהלת חשבונות', amount: 350, category: 'pro', freq: 'monthly', day: 10 },
   { name: 'ביטוח אחריות מקצועית', amount: 1320, category: 'insurance', freq: 'yearly', day: 12 },
   { name: 'פרסום ממומן בפייסבוק', amount: 200, category: 'marketing', freq: 'weekly', day: 0 },
   { name: 'ChatGPT Plus', amount: 75, category: 'tools', freq: 'monthly', day: 15 },
 ];
 
+// What FlowBiz gives, with what it would cost outside (draft values for Amit). They sit in
+// the tables as "חסכת עם FlowBiz" and never count in the calculations.
+export const FLOWBIZ_SETUP = [
+  { id: 'fb-logo', name: 'שם ולוגו', icon: 'palette', value: 2500, step: 6 },
+  { id: 'fb-msg', name: 'דף המסרים (קופירייטינג)', icon: 'pen-line', value: 1800, step: 7 },
+  { id: 'fb-lp', name: 'דף נחיתה', icon: 'layout-template', value: 3500, step: 9 },
+];
+export const FLOWBIZ_TOOLS = [
+  { id: 'fb-cal', name: 'יומן וזימון פגישות', icon: 'calendar-days', value: 50 },
+  { id: 'fb-crm', name: 'ניהול לידים ולקוחות', icon: 'users', value: 150 },
+  { id: 'fb-bot', name: 'בוט וואטסאפ לשירות לקוחות', icon: 'message-circle', value: 250 },
+  { id: 'fb-content', name: 'מכונת תוכן לרשתות', icon: 'sparkles', value: 300 },
+];
+
+// The shark's one-time setup suggestions for a marketing consultant (the model writes
+// these in production, from the business type). Never what FlowBiz already gives.
+export const SHARK_SETUP = [
+  { name: 'מצלמה ותאורה לזום', icon: 'camera', planned: 900 },
+  { name: 'פתיחת תיק ורואה חשבון', icon: 'file-text', planned: 800 },
+  { name: 'עורך דין לחוזה לקוח', icon: 'scale', planned: 1200 },
+  { name: 'קמפיין השקה', icon: 'megaphone', planned: 1500 },
+  { name: 'צילומי תדמית', icon: 'image', planned: 1200 },
+  { name: 'מחשב נייד', icon: 'laptop', planned: 4500 },
+];
+
 // The basket (סל מוצרים, v5 consultant pack). Prices include VAT.
+//   pay (a program only): start = all at the start, monthly = price / months each month
 //   kind: one = a single sale, program = several months (hours spread over them),
 //         monthly = a subscription (active clients stack month after month)
 //   cost: what one sale costs the business (not the user's time); null = not filled yet
 export const BASKET = [
-  { id: 'e1', name: 'שיחת היכרות (30 דקות)', short: 'שיחת היכרות', price: 0, cost: 0, hours: 0.5, kind: 'one', terms: 'one', free: true, role: 'entry' },
-  { id: 'e2', name: 'מדריך: 7 טעויות בשיווק עסק קטן', short: 'מדריך חינמי', price: 0, cost: 0, hours: 0, kind: 'one', terms: 'one', free: true, role: 'entry' },
-  { id: 'b1', name: 'סדנת אסטרטגיה אישית (3 שעות)', short: 'סדנה אישית', price: 890, cost: null, hours: 4, kind: 'one', terms: 'one', role: 'bridge' },
-  { id: 'p1', name: 'תוכנית ליווי 90 יום 1:1', short: 'ליווי 90 יום', price: 7500, cost: 450, hours: 20, months: 3, kind: 'program', terms: 'three', role: 'core' },
-  { id: 'p2', name: 'יום VIP אסטרטגי', short: 'יום VIP', price: 3900, cost: 250, hours: 8, kind: 'one', terms: 'one', role: 'premium' },
-  { id: 'r1', name: 'ריטיינר ליווי חודשי', short: 'ריטיינר חודשי', price: 2200, cost: 0, hours: 5, kind: 'monthly', terms: 'monthly', role: 'recurring' },
+  { id: 'e1', name: 'שיחת היכרות (30 דקות)', short: 'שיחת היכרות', price: 0, cost: 0, hours: 0.5, kind: 'one', free: true, role: 'entry' },
+  { id: 'e2', name: 'מדריך: 7 טעויות בשיווק עסק קטן', short: 'מדריך חינמי', price: 0, cost: 0, hours: 0, kind: 'one', free: true, role: 'entry' },
+  { id: 'b1', name: 'סדנת אסטרטגיה אישית (3 שעות)', short: 'סדנה אישית', price: 890, cost: null, hours: 4, kind: 'one', role: 'bridge' },
+  { id: 'p1', name: 'תוכנית ליווי 90 יום 1:1', short: 'ליווי 90 יום', price: 7500, cost: 450, hours: 20, months: 3, kind: 'program', pay: 'monthly', role: 'core' },
+  { id: 'p2', name: 'יום VIP אסטרטגי', short: 'יום VIP', price: 3900, cost: 250, hours: 8, kind: 'one', role: 'premium' },
+  { id: 'r1', name: 'ריטיינר ליווי חודשי', short: 'ריטיינר חודשי', price: 2200, cost: 0, hours: 5, kind: 'monthly', role: 'recurring' },
 ];
 
 // From "אני והעסק" (step 2).
@@ -127,12 +155,13 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let seq = 100;
 export const nextId = (p = 'x') => `${p}${++seq}`;
 
+// A setup item, as in the finance center: planned, paid so far, and "paid in full".
+const item = (id, name, icon, planned, spent, done = false) => ({ id, name, icon, planned, spent, done });
 const SETUP_ITEMS = [
-  { id: 's1', name: 'לוגו ומיתוג', icon: 'palette', planned: 1200, paid: 'all', paidAmount: 1200 },
-  { id: 's2', name: 'אתר ודף נחיתה', icon: 'monitor', planned: 2500, paid: 'part', paidAmount: 1800 },
-  { id: 's3', name: 'מצלמה ותאורה לזום', icon: 'camera', planned: 900, paid: 'none', paidAmount: 0 },
-  { id: 's4', name: 'פתיחת תיק ועורך דין לחוזה', icon: 'scale', planned: 800, paid: 'all', paidAmount: 800 },
-  { id: 's5', name: 'קמפיין השקה', icon: 'megaphone', planned: 1500, paid: 'none', paidAmount: 0 },
+  item('s1', 'מצלמה ותאורה לזום', 'camera', 900, 900, true),
+  item('s2', 'פתיחת תיק ורואה חשבון', 'file-text', 800, 800, true),
+  item('s3', 'עורך דין לחוזה לקוח', 'scale', 1200, 0),
+  item('s4', 'קמפיין השקה', 'megaphone', 1500, 600),
 ];
 
 const exp = (name, amount, category, freq, day, start = 'now') => ({ id: nextId('x'), name, amount, category, freq, day, start });
@@ -155,6 +184,8 @@ const HISTORY_ACTIVE = [
   { key: '2026-10', income: 13100, clients: 3 },
 ];
 
+const EMPTY_MONTHS = HISTORY_FIRST.map((m) => ({ key: m.key, income: null, clients: null }));
+
 function base(extra) {
   return {
     stage: null,
@@ -162,11 +193,11 @@ function base(extra) {
     setupBudget: null,
     setup: [],
     expenses: [],
-    history: { mode: null, months: [] },
+    history: { mode: null, months: clone(EMPTY_MONTHS) },
     toCome: { now: null, next: null, later: null },
     setupDone: null,
-    setupLeft: null,
     regular: { amount: null, day: 1 },
+    seen: [], // part 1 sections the user already went through (the guided list)
     cushion: null, // amount; null = the default, 2 months of expenses
     cushionMonths: 6, // stage 3: fill the cushion within this many months
     products: clone(BASKET),
@@ -185,69 +216,66 @@ function base(extra) {
   };
 }
 
-// Each scenario is a user arriving at step 5 with what the earlier steps and the
-// finance tables already know. The stage answer itself is not filled: the step asks it.
+// Each scenario is a user arriving at step 5 with what the earlier steps know: the basket,
+// the goal and the hours. Part 1 starts empty. `demo` fills part 1 (for a direct link or a
+// dev jump past it), so every later screen opens with numbers.
+const expenses = (acct = 350) => [exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva', 55, 'tools', 'monthly', 1), exp('הנהלת חשבונות', acct, 'pro', 'monthly', 10)];
 export const SCENARIOS = [
   {
     id: 'setup',
     label: 'שלב 1 · עוד אין לקוחות',
     sub: '20 שעות בשבוע, המודל עובד',
     stage: 'setup',
-    make: () =>
-      base({
-        bank: { has: true, amount: 10000 },
-        setupBudget: 7000,
-        setup: clone(SETUP_ITEMS),
-        expenses: [exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva ואחסון אתר', 110, 'tools', 'monthly', 1), exp('הנהלת חשבונות', 350, 'pro', 'monthly', 10), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0, '2027-01')],
-      }),
+    make: () => base(),
+    demo: (s) => {
+      s.bank = { has: true, amount: 10000 };
+      s.setupBudget = 5000;
+      s.setup = clone(SETUP_ITEMS);
+      s.expenses = [...expenses(), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0, '2027-01')];
+    },
   },
   {
     id: 'first',
     label: 'שלב 2 · לקוחות ראשונים',
     sub: 'רק 8 שעות בשבוע, אין לזה זמן',
     stage: 'first',
-    make: () =>
-      base({
-        bank: { has: false, amount: 6400 },
-        expenses: [exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva ואחסון אתר', 110, 'tools', 'monthly', 1), exp('הנהלת חשבונות', 350, 'pro', 'monthly', 10), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0)],
-        history: { mode: null, months: HISTORY_FIRST.map((m) => ({ ...m, income: null, clients: null })) },
-        toCome: { now: 2500, next: 2500, later: 0 },
-        setupDone: false,
-        setupLeft: 900,
-        assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 32 },
-      }),
+    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 32 } }),
+    demo: (s) => {
+      s.bank = { has: false, amount: 6400 };
+      s.expenses = [...expenses(), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0)];
+      s.history = { mode: 'manual', months: clone(HISTORY_FIRST) };
+      s.toCome = { now: 2500, next: 2500, later: 0 };
+      s.setupDone = false;
+      s.setup = [item('s1', 'מצלמה ותאורה לזום', 'camera', 900, 0)];
+    },
   },
   {
     id: 'active',
     label: 'שלב 3 · עסק פעיל',
     sub: 'עוסק מורשה, צריך לגדול פי 1.8',
     stage: 'active',
-    make: () =>
-      base({
-        bank: { has: true, amount: 1800 },
-        expenses: [exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva ואחסון אתר', 110, 'tools', 'monthly', 1), exp('הנהלת חשבונות', 450, 'pro', 'monthly', 10), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)],
-        history: { mode: 'manual', months: clone(HISTORY_ACTIVE) },
-        toCome: { now: 4400, next: 4900, later: 2500 },
-        setupDone: true,
-        setupLeft: 0,
-        regular: { amount: 4400, day: 1 },
-        entity: 'licensed',
-        taxPct: SETTINGS.taxPct.licensed,
-        assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 100 },
-      }),
+    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 100 } }),
+    demo: (s) => {
+      s.bank = { has: true, amount: 1800 };
+      s.expenses = [...expenses(450), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)];
+      s.history = { mode: 'manual', months: clone(HISTORY_ACTIVE) };
+      s.toCome = { now: 4400, next: 4900, later: 2500 };
+      s.setupDone = true;
+      s.regular = { amount: 4400, day: 1 };
+      s.entity = 'licensed';
+      s.taxPct = SETTINGS.taxPct.licensed;
+    },
   },
   {
     id: 'skipped',
     label: 'דילג על השלבים 2 ו-3',
     sub: 'בלי מוצרים בסל ובלי יעד',
     stage: 'setup',
-    make: () =>
-      base({
-        bank: { has: null, amount: null },
-        products: [],
-        goal: null,
-        assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: null },
-      }),
+    make: () => base({ products: [], goal: null, assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: null } }),
+    demo: (s) => {
+      s.bank = { has: true, amount: 8000 };
+      s.setupBudget = 0;
+    },
   },
 ];
 export const DEFAULT_SCENARIO = 'setup';
