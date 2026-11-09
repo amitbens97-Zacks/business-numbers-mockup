@@ -4,7 +4,7 @@
 import { html, useState, useRef, useEffect, Icon, PencilCheck, cx } from './lib.js';
 import { Button, StepHeading, InlineEdit } from './components.js';
 import { Field, Tag, Sheet, NumEdit, Num } from './ui.js';
-import { TODAY, PARTS, FREQS, SHARK_EXPENSES, SHARK_SETUP, FLOWBIZ_SETUP, FLOWBIZ_TOOLS, FLOWBIZ_PRICE, DEMO_REPORT, nextId, g, stageOf } from './data.js';
+import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, FLOWBIZ_SETUP, FLOWBIZ_TOOLS, FLOWBIZ_PRICE, DEMO_REPORT, nextId, g, stageOf } from './data.js';
 import {
   fmt, num, monthName, monthYear, monthlyCost, FORECAST_MONTHS, setupSummary, itemLeft, savedOf, todayAvg, runway,
   fixedMonthly, isLicensed, cushionTarget, addMonth, flowbizNet,
@@ -17,17 +17,32 @@ const SAVED_ICON = 'sparkles';
 // "חסכת עם FlowBiz": what the user gets from FlowBiz instead of paying for it.
 const Saved = ({ class: cls = '' }) => html`<span class=${cx('inline-flex h-8 items-center gap-1.5 rounded-full bg-money-50 px-3 text-[13px] font-bold text-money', cls)}><${Icon} name=${SAVED_ICON} size=${14} />חסכת עם FlowBiz</span>`;
 
+// The shark's suggestions: 4 at a time, each with its price and where the price comes from.
+// "עוד הצעות" shows 4 more (in production: the model writes more on the spot).
+const BATCH = 4;
 function SharkChips({ title, items, onAdd, label }) {
+  const [shown, setShown] = useState(BATCH);
   if (!items.length) return null;
+  const list = items.slice(0, shown);
+  const more = items.length - list.length;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
-    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
-    <div class="flex flex-wrap gap-2">
-      ${items.map(
-        (x) => html`<button key=${x.name} type="button" class="inline-flex h-9 items-center gap-1.5 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
-          <${Icon} name="plus" size=${14} />${x.name} · ${label(x)}
+    <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
+    <p class="mb-2 text-[12px] text-muted">מחירי שוק כולל מע"מ, נובמבר 2026. אחרי שמוסיפים אפשר לשנות כל סכום.</p>
+    <div class="grid gap-2 sm:grid-cols-2">
+      ${list.map(
+        (x) => html`<button key=${x.name} type="button" class="flex min-h-[56px] items-start gap-2 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
+          <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
+            ${x.note && html`<small class="block text-[12px] leading-snug text-muted">${x.note}</small>`}
+          </span>
         </button>`,
       )}
     </div>
+    ${more > 0 &&
+    html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setShown(shown + BATCH)}>
+      <${Icon} name="sparkles" size=${15} />עוד הצעות (${more})
+    </button>`}
   </div>`;
 }
 
@@ -190,7 +205,7 @@ function SetupTable({ s, up }) {
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
-      items=${SHARK_SETUP.filter((x) => !have.has(x.name)).slice(0, 5)}
+      items=${sharkSetupFor(s).filter((x) => !have.has(x.name))}
       label=${(x) => fmt(x.planned)}
       onAdd=${(x) => add({ name: x.name, icon: x.icon, planned: x.planned })}
     />
@@ -288,9 +303,9 @@ function ExpensesTable({ s, up }) {
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />הוצאה קבועה</button>
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
-      items=${SHARK_EXPENSES.filter((x) => !have.has(x.name)).slice(0, 4)}
+      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name))}
       label=${(x) => `${fmt(x.amount)} ${per(x.freq)}`}
-      onAdd=${(x) => add({ ...x })}
+      onAdd=${({ note, stages, ...x }) => add(x)}
     />
 
   </div>`;
@@ -425,6 +440,19 @@ function Regular({ s, up }) {
 function SetupDone({ s, up }) {
   return html`<div>
     <${YesNo} value=${s.setupDone} onChange=${(v) => up((d) => (d.setupDone = v))} />
+    ${s.setupDone === true &&
+    html`<div class="rise mt-4 rounded-xl bg-money-50 p-3 text-money">
+      <p class="mb-1 flex items-center gap-1.5 text-[13px] font-bold"><${Icon} name=${SAVED_ICON} size=${15} />${g('גם אם כבר יש לך', 'גם אם כבר יש לך')}, FlowBiz בונה ${g('איתך', 'איתך')} מחדש:</p>
+      <ul class="text-[14px]">
+        ${FLOWBIZ_SETUP.map(
+          (x) => html`<li key=${x.id} class="flex items-center justify-between gap-3 py-0.5">
+            <span class="flex min-w-0 items-center gap-2"><${Icon} name=${x.icon} size=${15} class="shrink-0" /><span class="text-ink">${x.name}</span></span>
+            <span class="shrink-0 font-bold tabular-nums">${fmt(x.value)}</span>
+          </li>`,
+        )}
+      </ul>
+      <p class="mt-1.5 flex items-baseline justify-between gap-3 border-t border-money/30 pt-1.5 font-bold"><span class="text-[15px]">חסכת עם FlowBiz</span><span class="font-display text-[20px] font-black tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>
+    </div>`}
     ${s.setupDone === false &&
     html`<div class="rise mt-4">
       <p class="mb-2 text-[14px] text-muted">מה עוד נשאר לשלם? מה שנשאר יוצא מהכסף של העסק בתחזית.</p>
@@ -593,7 +621,7 @@ function Summary({ s }) {
     </div>`}
     <div class="mt-3 rounded-xl bg-money-50 px-3 py-2 text-[13px] font-bold text-money">
       <p class="mb-0.5 flex items-center gap-1.5"><${Icon} name=${SAVED_ICON} size=${15} />חסכת עם FlowBiz</p>
-      ${(s.stage === 'setup' || s.setupDone === false) && html`<p class="flex justify-between gap-2"><span>בהקמה</span><span class="tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>`}
+      <p class="flex justify-between gap-2"><span>${s.stage === 'setup' || s.setupDone === false ? 'בהקמה' : 'שם, לוגו ודפים'}</span><span class="tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>
       <p class="flex justify-between gap-2"><span>כל חודש, מעבר למנוי</span><span class="tabular-nums">${fmt(flowbizNet())}</span></p>
     </div>
   </div>`;

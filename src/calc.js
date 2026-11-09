@@ -508,7 +508,7 @@ export function fixes(s) {
   }
 
   // Cut the biggest expense that is not a must.
-  const cut = [...s.expenses].filter((x) => !x.flowbiz && x.category === 'marketing' || x.category === 'tools').sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
+  const cut = [...s.expenses].filter((x) => !x.flowbiz && (x.category === 'marketing' || x.category === 'tools')).sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
   if (cut && monthlyCost(cut) >= 150) {
     c.push({ id: 'cut', icon: 'scissors', title: `לוותר על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש`, make: (x) => ({ ...freeze(x), expenses: x.expenses.filter((e) => e.id !== cut.id) }) });
   }

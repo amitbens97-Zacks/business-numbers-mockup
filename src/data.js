@@ -80,6 +80,7 @@ export const CATEGORIES = {
   tools: { label: 'כלים ותוכנות', icon: 'monitor' },
   pro: { label: 'אנשי מקצוע', icon: 'briefcase' },
   insurance: { label: 'ביטוח', icon: 'shield-check' },
+  gov: { label: 'מסים ואגרות', icon: 'landmark' },
   other: { label: 'אחר', icon: 'circle-dot' },
 };
 
@@ -89,16 +90,26 @@ export const FREQS = [
   { id: 'yearly', label: 'פעם בשנה' },
 ];
 
-// The shark's expense suggestions for a marketing consultant (the model writes these
-// in production, from the business type). Never tools FlowBiz already gives
-// (Morning, Calendly, Smoove and the like).
+// The shark's suggestions for a marketing consultant. In production the model writes them
+// from the business type, the stage and the entity, with market prices it checks. Never
+// what FlowBiz already gives (a landing page, content, a bot, leads, a calendar).
+// Prices include VAT; checked November 2026. Ordered by how much a business of this kind
+// needs them; the first 4 show, "עוד הצעות" shows 4 more each time.
+//   stages: where the suggestion fits (default: all); amount may depend on the entity.
 export const SHARK_EXPENSES = [
-  { name: 'Zoom', amount: 60, category: 'tools', freq: 'monthly', day: 1 },
-  { name: 'Canva', amount: 55, category: 'tools', freq: 'monthly', day: 1 },
-  { name: 'הנהלת חשבונות', amount: 350, category: 'pro', freq: 'monthly', day: 10 },
-  { name: 'ביטוח אחריות מקצועית', amount: 1320, category: 'insurance', freq: 'yearly', day: 12 },
-  { name: 'פרסום ממומן בפייסבוק', amount: 200, category: 'marketing', freq: 'weekly', day: 0 },
-  { name: 'ChatGPT Plus', amount: 75, category: 'tools', freq: 'monthly', day: 15 },
+  { name: 'הנהלת חשבונות', category: 'pro', freq: 'monthly', day: 10, amount: { exempt: 250, licensed: 550 },
+    note: { exempt: 'ליווי שוטף לעוסק פטור, בלי הדוח השנתי', licensed: 'עוסק מורשה: כולל דיווחי מע"מ ומקדמות' } },
+  { name: 'ביטוח לאומי (מינימום)', category: 'gov', freq: 'monthly', day: 15, amount: 265, note: 'המינימום לעצמאי ב-2026, גם בחודש בלי הכנסה' },
+  { name: 'דוח שנתי לרואה חשבון', category: 'pro', freq: 'yearly', day: 1, amount: 1500, note: 'בדרך כלל 1,100-2,000 ₪' },
+  { name: 'Zoom Pro', category: 'tools', freq: 'monthly', day: 1, amount: 57, note: 'רישיון אחד, תשלום חודשי' },
+  { name: 'פרסום ממומן (פייסבוק ואינסטגרם)', category: 'marketing', freq: 'weekly', day: 0, amount: 150, stages: ['first', 'active'], note: 'תקציב בדיקה: כ-650 ₪ בחודש' },
+  { name: 'פרסום ממומן (פייסבוק ואינסטגרם)', category: 'marketing', freq: 'weekly', day: 0, amount: 150, stages: ['setup'], start: 'next', note: 'מהחודש הבא, תקציב בדיקה: כ-650 ₪ בחודש' },
+  { name: 'ביטוח אחריות מקצועית', category: 'insurance', freq: 'yearly', day: 12, amount: 1500, note: 'הערכה ליועץ. תלוי בגבול הכיסוי' },
+  { name: 'Google Workspace', category: 'tools', freq: 'monthly', day: 1, amount: 35, note: 'מייל עסקי על הדומיין, משתמש אחד' },
+  { name: 'ChatGPT Plus', category: 'tools', freq: 'monthly', day: 15, amount: 70, note: 'המחיר בישראל' },
+  { name: 'Canva Pro', category: 'tools', freq: 'monthly', day: 1, amount: 55, note: 'משתמש אחד, תשלום חודשי' },
+  { name: 'קו סלולר לעסק', category: 'tools', freq: 'monthly', day: 1, amount: 40, note: 'קו נפרד ללקוחות' },
+  { name: 'השתלמות מקצועית', category: 'pro', freq: 'yearly', day: 1, amount: 2400, stages: ['first', 'active'], note: 'קורס או כנס אחד בשנה' },
 ];
 
 // What FlowBiz gives, with what it would cost outside (draft values for Amit). They sit in
@@ -121,16 +132,25 @@ export const FLOWBIZ_TOOLS = [
 export const FLOWBIZ_PRICE = 350;
 export const flowbizExpense = () => ({ id: 'x-flowbiz', name: 'FlowBiz', amount: FLOWBIZ_PRICE, category: 'flowbiz', freq: 'monthly', day: 1, start: 'now', flowbiz: true });
 
-// The shark's one-time setup suggestions for a marketing consultant (the model writes
-// these in production, from the business type). Never what FlowBiz already gives.
+// The shark's one-time setup suggestions for a marketing consultant (same rules as above:
+// the model writes them, never what FlowBiz gives; the name, the logo, the messages page
+// and the landing page are FlowBiz's).
 export const SHARK_SETUP = [
-  { name: 'מצלמה ותאורה לזום', icon: 'camera', planned: 900 },
-  { name: 'פתיחת תיק ורואה חשבון', icon: 'file-text', planned: 800 },
-  { name: 'עורך דין לחוזה לקוח', icon: 'scale', planned: 1200 },
-  { name: 'קמפיין השקה', icon: 'megaphone', planned: 1500 },
-  { name: 'צילומי תדמית', icon: 'image', planned: 1200 },
-  { name: 'מחשב נייד', icon: 'laptop', planned: 4500 },
+  { name: 'פתיחת תיק אצל רואה חשבון', icon: 'file-text', planned: 600, stages: ['setup'], note: 'הפתיחה במע"מ ובמס הכנסה עצמה בחינם' },
+  { name: 'חוזה לקוח מעורך דין', icon: 'scale', planned: 1500, note: 'חוזה ליווי בסיסי, 1,000-2,500 ₪' },
+  { name: 'מצלמת רשת ותאורה', icon: 'camera', planned: 600, note: 'מצלמה טובה וטבעת תאורה לזום' },
+  { name: 'קמפיין השקה', icon: 'megaphone', planned: 1500, note: 'תקציב פרסום לחודש הראשון' },
+  { name: 'צילומי תדמית', icon: 'image', planned: 1200, note: 'שעת צילום, 10-15 תמונות ערוכות' },
+  { name: 'מיקרופון', icon: 'mic', planned: 350, note: 'מיקרופון USB לשיחות והקלטות' },
+  { name: 'מחשב נייד', icon: 'laptop', planned: 3500, note: 'דגם בינוני, מספיק לעבודה ולזום' },
+  { name: 'עמדת עבודה (שולחן וכיסא)', icon: 'armchair', planned: 1200, note: 'כיסא ארגונומי ושולחן' },
 ];
+// The suggestions that fit this user, with the amount and the note for their entity.
+const forEntity = (v, s) => (v != null && typeof v === 'object' ? v[s.entity] ?? v.exempt : v);
+const fits = (x, s) => !x.stages || x.stages.includes(s.stage);
+export const sharkExpensesFor = (s) =>
+  SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => ({ ...x, amount: forEntity(x.amount, s), note: forEntity(x.note, s), start: x.start === 'next' ? FIRST_MONTH : 'now' }));
+export const sharkSetupFor = (s) => SHARK_SETUP.filter((x) => fits(x, s));
 
 // The basket (סל מוצרים, v5 consultant pack). Prices include VAT.
 //   pay (a program only): start = all at the start, monthly = price / months each month
@@ -164,9 +184,9 @@ export const nextId = (p = 'x') => `${p}${++seq}`;
 // A setup item, as in the finance center: planned, paid so far, and "paid in full".
 const item = (id, name, icon, planned, spent, done = false) => ({ id, name, icon, planned, spent, done });
 const SETUP_ITEMS = [
-  item('s1', 'מצלמה ותאורה לזום', 'camera', 900, 900, true),
-  item('s2', 'פתיחת תיק ורואה חשבון', 'file-text', 800, 800, true),
-  item('s3', 'עורך דין לחוזה לקוח', 'scale', 1200, 0),
+  item('s1', 'מצלמת רשת ותאורה', 'camera', 900, 900, true),
+  item('s2', 'פתיחת תיק אצל רואה חשבון', 'file-text', 800, 800, true),
+  item('s3', 'חוזה לקוח מעורך דין', 'scale', 1200, 0),
   item('s4', 'קמפיין השקה', 'megaphone', 1500, 600),
 ];
 
@@ -211,7 +231,8 @@ function base(extra) {
 // Each scenario is a user arriving at step 5 with what the earlier steps know: the basket,
 // the goal and the hours. Part 1 starts empty. `demo` fills part 1 (for a direct link or a
 // dev jump past it), so every later screen opens with numbers.
-const expenses = (acct = 350) => [flowbizExpense(), exp('Zoom', 60, 'tools', 'monthly', 1), exp('Canva', 55, 'tools', 'monthly', 1), exp('הנהלת חשבונות', acct, 'pro', 'monthly', 10)];
+const ADS = 'פרסום ממומן (פייסבוק ואינסטגרם)';
+const expenses = (acct = 350) => [flowbizExpense(), exp('Zoom Pro', 60, 'tools', 'monthly', 1), exp('Canva Pro', 55, 'tools', 'monthly', 1), exp('הנהלת חשבונות', acct, 'pro', 'monthly', 10)];
 export const SCENARIOS = [
   {
     id: 'setup',
@@ -223,7 +244,7 @@ export const SCENARIOS = [
       s.bank = { has: true, amount: 10000 };
       s.setupBudget = 5000;
       s.setup = clone(SETUP_ITEMS);
-      s.expenses = [...expenses(), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0, '2027-01')];
+      s.expenses = [...expenses(), exp(ADS, 200, 'marketing', 'weekly', 0, '2027-01')];
     },
   },
   {
@@ -234,11 +255,11 @@ export const SCENARIOS = [
     make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 32 } }),
     demo: (s) => {
       s.bank = { has: false, amount: 6400 };
-      s.expenses = [...expenses(), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0)];
+      s.expenses = [...expenses(), exp(ADS, 200, 'marketing', 'weekly', 0)];
       s.history = clone(HISTORY_FIRST);
       s.toCome = { now: 2500, next: 2500, later: 0 };
       s.setupDone = false;
-      s.setup = [item('s1', 'מצלמה ותאורה לזום', 'camera', 900, 0)];
+      s.setup = [item('s1', 'מצלמת רשת ותאורה', 'camera', 900, 0)];
     },
   },
   {
@@ -249,7 +270,7 @@ export const SCENARIOS = [
     make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 100 } }),
     demo: (s) => {
       s.bank = { has: true, amount: 1800 };
-      s.expenses = [...expenses(450), exp('פרסום ממומן בפייסבוק', 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)];
+      s.expenses = [...expenses(450), exp(ADS, 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)];
       s.history = clone(HISTORY_ACTIVE);
       s.toCome = { now: 4400, next: 4900, later: 2500 };
       s.setupDone = true;
