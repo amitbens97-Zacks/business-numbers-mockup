@@ -1,0 +1,123 @@
+// Developer notes for task 6 (step 5), plus scenarios and a jump list (Shift+D).
+import { html, Icon, cx } from './lib.js';
+import { GENDER, setDemoGender, SCENARIOS, SETTINGS } from './data.js';
+
+export const JUMPS = [
+  { id: 'opening', label: 'מסך פתיחה' },
+  { id: 'stage', label: 'השאלה: איפה העסק עומד' },
+  { id: 'today', label: 'חלק 1: המצב היום' },
+  { id: 'prices', label: 'חלק 2: המחירים' },
+  { id: 'goal', label: 'חלק 3: היעד' },
+  { id: 'sell', label: 'חלק 4: כמה למכור' },
+  { id: 'forecast', label: 'חלק 5: התחזית והבדיקות' },
+  { id: 'doc', label: 'התוכנית העסקית (המסמך)' },
+  { id: 'done', label: 'סיום השלב והפרק' },
+  { id: 'home', label: 'דף הבית' },
+];
+
+const NOTES = [
+  {
+    title: 'מה השלב עושה',
+    items: [
+      'שלב 5 מחליף את "תקציב הקמה" ואת "תחזית פיננסית". הוא נפתח בשאלה של המרכז הפיננסי, "איפה העסק עומד היום?", ומתאים את עצמו לתשובה.',
+      'אותם 5 חלקים בכל שלב: המצב היום, המחירים, היעד, כמה למכור, התחזית. רק התוכן של חלק 1 (ותוספות בחלק 3) משתנה לפי השלב.',
+      'המרכז הפיננסי לא שואל יותר את השאלה. הוא נפתח על הלוח של השלב שנבחר כאן. משתמשים שעברו מהשלבים הישנים 6 ו-7 עדיין מקבלים את השאלה במרכז הפיננסי.',
+      'אפשר להיכנס לשלב שוב. השלב יכול להשתנות, והתחזית והמסמך נבנים מחדש עם תאריך.',
+    ],
+  },
+  {
+    title: 'מקור אחד לנתונים',
+    items: [
+      'הוצאות, פריטי הקמה, הכסף היום, כסף שעוד מגיע וההכנסה הקבועה נשמרים בטבלאות של המרכז הפיננסי. השלב כותב אליהן, לא לעותק.',
+      'מחיר, עלות, שעות ותנאי תשלום נכתבים לסל המוצרים. שלב 8 מקבל את תנאי התשלום מוכנים.',
+      'כסף שעוד מגיע וההכנסה הקבועה הם סכומים בלבד. במרכז הפיננסי הם שורה אחת, "מ\'העסק במספרים\'", שקטנה בכל לקוח שמוסיפים שם לקוח-לקוח. בלי כפילות, כמו הרזרבה של תקציב ההקמה.',
+      'לכל הוצאה יש תאריך התחלה: "כבר משלם" או חודש עתידי. התחזית סופרת אותה רק מאותו חודש.',
+      'התשובה לשאלה "יש לעסק חשבון בנק נפרד?" ממלאת גם את פריט ההכנה "חשבון בנק נפרד".',
+    ],
+  },
+  {
+    title: 'החישובים (src/calc.js)',
+    items: [
+      'כל המספרים בקוד. המודל כותב רק מילים (הכריש) והצעות להוצאות.',
+      'מחירי הסל כוללים מע"מ. עוסק פטור: כל המחיר הכנסה. עוסק מורשה: מחיר ÷ (1 + מע"מ), והמע"מ מוצג בשורה נפרדת.',
+      'נשאר = הכנסות - עלויות המוצרים - הוצאות קבועות - הפרשה למס (% מההכנסות).',
+      'צריך להכניס = (יעד + הוצאות קבועות + עלויות המוצרים + כרית בשלב 3) ÷ (1 - מס).',
+      'התמהיל = מכירות בחודש רגיל. מוצר חודשי נספר בלקוחות פעילים; חדשים בחודש = פעילים ÷ כמה זמן לקוח נשאר. תוכנית של כמה חודשים מפזרת את השעות.',
+      'התמהיל של הכריש: מוסיפים מכירה אחת בכל פעם, למוצר עם הרווח הכי גבוה לשעה (מחולק במספר שכבר יש ממנו, כדי לגוון), כל עוד יש שעות, עד שמגיעים ליעד.',
+      'מהיעד אחורה: לקוחות חדשים ÷ אחוז סגירה = שיחות; שיחות ÷ אחוז לידים שקובעים = לידים. שעות השיחות נספרות בשעות.',
+      'תחזית 12 חודשים: המכירות גדלות בקו ישר מנקודת ההתחלה (0 בשלב 1, הממוצע של היום בשלבים 2-3) לחודש רגיל, בתוך מספר החודשים שנבחר. הכסף נכנס לפי תנאי התשלום.',
+      'קו הכסף: מה שהחודש השאיר יוצא אליך עד גובה היעד; הפסד יוצא מהכסף של העסק; מה שמעל היעד נשאר בעסק. בשלב 3 הסכום לכרית נשאר קודם, עד שהיא מלאה.',
+    ],
+  },
+  {
+    title: 'ארבע הבדיקות',
+    items: [
+      'מגיעים ליעד? הנשאר בחודש רגיל מול היעד, והחודש שבו מגיעים.',
+      'יש לזה זמן? השעות של התמהיל (כולל שיחות) מול השעות שיש. מוצג גם: כמה כל שעה צריכה להכניס מול כמה הסל מכניס לשעה.',
+      'הכסף מחזיק בדרך? הנקודה הכי נמוכה של קו הכסף. מתחת לאפס = אדום. בשלב 3, מתחת לכרית = כתום.',
+      'הקצב סביר? שלבים 2-3: לקוחות חדשים בחודש רגיל ÷ היום, ומה זה אומר בכל חודש. עד 10% בחודש ירוק, עד 20% כתום. בשלב 1 מידע בלבד.',
+      'שורה תחתונה: אדום באחת משלוש הראשונות = "יש בעיה במודל". כתום כלשהו או קצב גבוה = "אפשרי, עם שינוי". אחרת "המודל עובד".',
+      'תיקונים: הקוד בודק כל תיקון אפשרי, מדרג לפי ההשפעה על הבדיקות, ומציג עד 3. כל תיקון מציג לפני ואחרי, ואפשר לבטל. העלאת מחיר נכתבת גם לסל.',
+      'אפשר לסיים את השלב גם עם בדיקה אדומה.',
+    ],
+  },
+  {
+    title: 'הגדרות של FlowBiz (לא בקוד)',
+    items: [
+      `מע"מ ${SETTINGS.vatPct}%, תקרת עוסק פטור ${SETTINGS.exemptCeiling.toLocaleString('he-IL')} ₪, הפרשה למס ${SETTINGS.taxPct.exempt}% לפטור ו-${SETTINGS.taxPct.licensed}% למורשה. מתעדכנים בפאנל הניהול.`,
+      'התראה כשהתחזית עוברת את תקרת עוסק פטור ב-12 חודשים.',
+    ],
+  },
+  {
+    title: 'טקסטים לאישור של עמית',
+    items: ['פתיחה, שם התג החדש במקום "הגזבר" ("המתכנן"), שורות הכריש, והסכום שנחסך בפרק (מאוחד מהשלבים 6 ו-7 הישנים) הם טיוטה.', 'בשלב 3, אם היעד כבר מושג, הכריש מציע יעד גבוה ב-20% (חלק 3).'],
+  },
+];
+
+export function DevPanel({ open, onClose, onJump, scenario, onScenario }) {
+  const box = 'mb-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3';
+  const btn = 'rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-start text-[13px] font-semibold hover:bg-brand-50 cursor-pointer';
+  return html`<aside
+    class=${cx(
+      'fixed inset-y-0 end-0 z-[70] flex w-full max-w-sm flex-col border-s border-slate-200 bg-white shadow-2xl transition-transform duration-200',
+      open ? 'translate-x-0' : '-translate-x-full pointer-events-none invisible',
+    )}
+    aria-hidden=${!open}
+  >
+    <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <h2 class="flex items-center gap-2 text-[16px] font-bold text-slate-900"><${Icon} name="code-xml" size=${17} /> הערות למפתחים</h2>
+      <button type="button" onClick=${onClose} aria-label="סגירה" class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer"><${Icon} name="x" size=${18} /></button>
+    </div>
+    <div class="thin-scroll flex-1 overflow-y-auto p-4 text-[14px] leading-relaxed text-slate-700">
+      <section class=${box}>
+        <h3 class="mb-2 font-bold text-brand-900">המשתמש לדוגמה</h3>
+        <div class="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="המשתמש לדוגמה">
+          ${[
+            ['m', 'דניאל', 'פנייה בלשון זכר'],
+            ['f', 'דניאלה', 'פנייה בלשון נקבה'],
+          ].map(
+            ([id, name, sub]) => html`<button key=${id} type="button" role="radio" aria-checked=${GENDER === id} onClick=${() => GENDER !== id && setDemoGender(id)} class=${cx('rounded-lg border px-3 py-1.5 text-start cursor-pointer', GENDER === id ? 'border-brand-600 bg-brand-100 text-brand-600' : 'border-brand-200 bg-white text-brand-900')}><b class="block text-[14px]">${name}</b><small class="text-[12px]">${sub}</small></button>`,
+          )}
+        </div>
+      </section>
+      <section class=${box}>
+        <h3 class="mb-2 font-bold text-brand-900">מצב העסק (מתחיל מחדש)</h3>
+        <div class="flex flex-col gap-1.5">
+          ${SCENARIOS.map(
+            (sc) => html`<button key=${sc.id} type="button" onClick=${() => onScenario(sc.id)} class=${cx(btn, scenario === sc.id && '!border-brand-600 !bg-brand-100')}><b class="block">${sc.label}</b><small class="text-[12px] text-slate-500">${sc.sub}</small></button>`,
+          )}
+        </div>
+      </section>
+      <section class=${box}>
+        <h3 class="mb-2 font-bold text-brand-900">מעבר מהיר בין המסכים</h3>
+        <div class="flex flex-col gap-1.5">${JUMPS.map((j) => html`<button key=${j.id} type="button" onClick=${() => onJump(j.id)} class=${btn}>${j.label}</button>`)}</div>
+      </section>
+      ${NOTES.map(
+        (n) => html`<section key=${n.title} class="mb-4 p-1">
+          <h3 class="mb-1.5 font-bold text-slate-900">${n.title}</h3>
+          <ul class="list-disc space-y-1 ps-4">${n.items.map((t) => html`<li>${t}</li>`)}</ul>
+        </section>`,
+      )}
+    </div>
+  </aside>`;
+}
