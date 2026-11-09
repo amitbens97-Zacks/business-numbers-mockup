@@ -17,7 +17,7 @@
 //   - The cash line: the owner takes out what the month left, up to the goal; a loss
 //     comes out of the business's money; what is above the goal stays in the business.
 //     In stage 3 the cushion set-aside comes first, until the cushion is full.
-import { SETTINGS, FIRST_MONTH, TODAY, FLOWBIZ_TOOLS, FLOWBIZ_PRICE } from './data.js';
+import { SETTINGS, FIRST_MONTH, TODAY } from './data.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const SHORT = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -58,7 +58,7 @@ const fixedIn = (s, i) => s.expenses.reduce((t, x) => t + (i >= startIndex(x) ? 
 
 export const itemLeft = (x) => (x.done ? 0 : Math.max(0, (x.planned || 0) - (x.spent || 0)));
 export function setupSummary(s) {
-  const items = s.setup;
+  const items = s.setup.filter((x) => !x.flowbiz); // what FlowBiz builds never counts
   const allocated = items.reduce((t, x) => t + (x.planned || 0), 0);
   const spent = items.reduce((t, x) => t + (x.spent || 0), 0);
   const overItems = items.filter((x) => (x.spent || 0) > (x.planned || 0));
@@ -114,8 +114,7 @@ export function todayAvg(s) {
   const pastOut = h.out != null ? h.out / n : null;
   return { gross, income, vat: gross - income, clients, out, tax, left: income - out - tax, n, pastOut };
 }
-// What FlowBiz saves each month beyond its own price (shown, never counted).
-export const flowbizNet = () => savedOf(FLOWBIZ_TOOLS) - FLOWBIZ_PRICE;
+
 
 // Months the money lasts with no income at all (stage 1), or with only the money to
 // come (stages 2-3).

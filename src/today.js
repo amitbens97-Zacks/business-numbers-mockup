@@ -4,31 +4,29 @@
 import { html, useState, useRef, useEffect, Icon, PencilCheck, cx } from './lib.js';
 import { Button, StepHeading, InlineEdit } from './components.js';
 import { Field, Tag, Sheet, NumEdit, Num } from './ui.js';
-import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, FLOWBIZ_SETUP, FLOWBIZ_TOOLS, FLOWBIZ_PRICE, DEMO_REPORT, nextId, g, stageOf } from './data.js';
+import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, DEMO_REPORT, nextId, g, stageOf } from './data.js';
 import {
   fmt, num, monthName, monthYear, monthlyCost, FORECAST_MONTHS, setupSummary, itemLeft, savedOf, todayAvg, runway,
-  fixedMonthly, isLicensed, cushionTarget, addMonth, flowbizNet,
+  fixedMonthly, isLicensed, cushionTarget, addMonth,
 } from './calc.js';
 import { Money, YesNo } from './parts.js';
 
 const cell = (label, node, cls = '') => html`<div class=${cx('min-w-0', cls)}><span class="block text-[12px] font-bold text-muted md:hidden">${label}</span>${node}</div>`;
-const SAVED_ICON = 'sparkles';
+// "חסכת עם FlowBiz": a plain note in the row, in the same look as the rest of the table.
+const Saved = () => html`<span class="text-[14px] font-bold text-muted">חסכת עם FlowBiz</span>`;
 
-// "חסכת עם FlowBiz": what the user gets from FlowBiz instead of paying for it.
-const Saved = ({ class: cls = '' }) => html`<span class=${cx('inline-flex h-8 items-center gap-1.5 rounded-full bg-money-50 px-3 text-[13px] font-bold text-money', cls)}><${Icon} name=${SAVED_ICON} size=${14} />חסכת עם FlowBiz</span>`;
-
-// The shark's suggestions: 4 at a time, each with its price and where the price comes from.
-// "עוד הצעות" shows 4 more (in production: the model writes more on the spot).
-const BATCH = 4;
+// The shark's suggestions: every one that fits shows. "עוד הצעות" shows more (in production
+// the model writes more on each click, with no limit).
 function SharkChips({ title, items, onAdd, label }) {
-  const [shown, setShown] = useState(BATCH);
+  const [extra, setExtra] = useState(false);
+  const list = extra ? items : items.filter((x) => !x.extra);
+  const hidden = items.length - list.length;
   if (!items.length) return null;
-  const list = items.slice(0, shown);
-  const more = items.length - list.length;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
     <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
     <p class="mb-2 text-[12px] text-muted">מחירי שוק כולל מע"מ, נובמבר 2026. אחרי שמוסיפים אפשר לשנות כל סכום.</p>
-    <div class="grid gap-2 sm:grid-cols-2">
+    ${list.length > 0 &&
+    html`<div class="grid gap-2 sm:grid-cols-2">
       ${list.map(
         (x) => html`<button key=${x.name} type="button" class="flex min-h-[56px] items-start gap-2 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
           <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
@@ -38,10 +36,10 @@ function SharkChips({ title, items, onAdd, label }) {
           </span>
         </button>`,
       )}
-    </div>
-    ${more > 0 &&
-    html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setShown(shown + BATCH)}>
-      <${Icon} name="sparkles" size=${15} />עוד הצעות (${more})
+    </div>`}
+    ${hidden > 0 &&
+    html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setExtra(true)}>
+      <${Icon} name="plus" size=${15} />עוד הצעות
     </button>`}
   </div>`;
 }
@@ -82,15 +80,18 @@ function SetupRow({ x, set, remove }) {
   </li>`;
 }
 
-// What FlowBiz gives: the value in "תכננת", and "חסכת עם FlowBiz" across the rest.
-function SavedRow({ x, cols, unit = '' }) {
-  return html`<li class=${cx('grid grid-cols-4 items-center gap-x-2 gap-y-2 border-t border-line py-3 md:gap-x-3', cols)}>
+// What FlowBiz builds, once the user added it: the market price in "תכננת", and "חסכת עם
+// FlowBiz" across the rest. Not counted.
+function SavedRow({ x, remove }) {
+  return html`<li class=${cx('grid grid-cols-4 items-center gap-x-2 gap-y-2 border-t border-line py-3 md:gap-x-3', SETUP_COLS)}>
     <div class="col-span-4 flex min-w-0 items-center gap-2.5 md:col-span-1">
-      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-money-50 text-money"><${Icon} name=${x.icon} size=${17} /></span>
+      <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${x.icon || 'package'} size=${17} /></span>
       <b class="min-w-0 text-[15px]">${x.name}</b>
+      <span class="flex-1"></span>
+      <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
     </div>
-    ${cell('שווי', html`<span class="font-display text-[16px] font-extrabold tabular-nums text-muted">${fmt(x.value)}${unit}</span>`)}
-    <div class="col-span-3 flex md:col-span-3 md:justify-start"><${Saved} /></div>
+    ${cell('תכננת', html`<span class="font-display text-[16px] font-extrabold tabular-nums">${fmt(x.value)}</span>`)}
+    <div class="col-span-3 flex items-center justify-between gap-2 md:col-span-3"><${Saved} /><span class="max-md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span></div>
   </li>`;
 }
 
@@ -184,7 +185,7 @@ function SetupTable({ s, up }) {
     <div class=${cx('mt-4 hidden pb-2 text-[12px] font-bold text-muted md:grid md:gap-x-3', SETUP_COLS)}>
       <span>פריט</span><span>תכננת</span><span>שולם</span><span>נשאר לשלם</span><span class="text-end">שולם במלואו</span>
     </div>
-    <ul>${s.setup.map((x) => html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} />`)}</ul>
+    <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} />`))}</ul>
     ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים. אפשר להוסיף פריט, או להתחיל מההצעות של הכריש.</p>`}
     ${b.unallocated > 0 &&
     html`<div class=${cx('grid grid-cols-4 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
@@ -207,17 +208,9 @@ function SetupTable({ s, up }) {
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
       items=${sharkSetupFor(s).filter((x) => !have.has(x.name))}
       label=${(x) => fmt(x.planned)}
-      onAdd=${(x) => add({ name: x.name, icon: x.icon, planned: x.planned })}
+      onAdd=${(x) => add(x.flowbiz ? { name: x.name, icon: x.icon, flowbiz: true, value: x.value, planned: null, spent: 0 } : { name: x.name, icon: x.icon, planned: x.planned })}
     />
 
-    <h3 class="mt-6 flex flex-wrap items-baseline justify-between gap-2 text-[15px] font-bold">
-      <span class="flex items-center gap-2"><span class="text-money"><${Icon} name=${SAVED_ICON} size=${17} /></span>מה ש-FlowBiz בונה ${g('איתך', 'איתך')}</span>
-      <span class="text-[13px] font-semibold text-muted">לא יוצא מהתקציב</span>
-    </h3>
-    <ul class="mt-1">${FLOWBIZ_SETUP.map((x) => html`<${SavedRow} key=${x.id} x=${x} cols=${SETUP_COLS} />`)}</ul>
-    <p class="flex items-center justify-between gap-3 border-t-2 border-money/40 pt-3 text-[15px] font-bold text-money">
-      <span>חסכת עם FlowBiz בהקמה</span><span class="font-display text-[19px] font-black tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span>
-    </p>
   </div>`;
 }
 
@@ -230,7 +223,10 @@ const per = (f) => (f === 'weekly' ? 'בשבוע' : f === 'yearly' ? 'בשנה' 
 function ExpenseRow({ x, set, remove }) {
   return html`<li class=${cx('grid grid-cols-2 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', EXP_COLS)}>
     <div class="col-span-2 flex min-w-0 items-center gap-2.5 md:col-span-1">
-      <${InlineEdit} value=${x.name} placeholder="שם ההוצאה" onSave=${(v) => set({ name: v })} class="min-w-0 text-[15px] font-bold leading-tight" />
+      <span class="min-w-0">
+        <${InlineEdit} value=${x.name} placeholder="שם ההוצאה" onSave=${(v) => set({ name: v })} class="min-w-0 text-[15px] font-bold leading-tight" />
+        ${x.sub && html`<small class="block text-[12px] leading-snug text-muted">${x.sub}</small>`}
+      </span>
       <span class="flex-1"></span>
       <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
     </div>
@@ -250,37 +246,6 @@ function ExpenseRow({ x, set, remove }) {
   </li>`;
 }
 
-// The FlowBiz subscription: a real expense on one side, what it replaces on the other.
-function FlowBizRow() {
-  const worth = savedOf(FLOWBIZ_TOOLS);
-  return html`<li class="border-t border-line py-3">
-    <div class="grid items-start gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:gap-5">
-      <div class="flex min-w-0 items-center gap-3">
-        <img src="assets/flowbiz-mark-color.png" alt="" class="h-10 w-10 shrink-0 rounded-xl border border-line bg-white object-contain p-1" />
-        <div class="min-w-0">
-          <b class="block text-[15px] leading-tight">FlowBiz</b>
-          <small class="text-[13px] text-muted">המנוי החודשי · ${g('כבר משלם', 'כבר משלמת')}</small>
-        </div>
-        <span class="flex-1"></span>
-        <span class="text-end"><${Num} n=${FLOWBIZ_PRICE} class="text-[17px]" /><small class="block text-[12px] text-muted">בחודש</small></span>
-      </div>
-      <div class="rounded-xl bg-money-50 p-3 text-money">
-        <p class="mb-1 flex items-center gap-1.5 text-[13px] font-bold"><${Icon} name=${SAVED_ICON} size=${15} />בתוך המנוי, במקום לשלם על:</p>
-        <ul class="text-[14px]">
-          ${FLOWBIZ_TOOLS.map(
-            (x) => html`<li key=${x.id} class="flex items-center justify-between gap-3 py-0.5">
-              <span class="flex min-w-0 items-center gap-2"><${Icon} name=${x.icon} size=${15} class="shrink-0" /><span class="text-ink">${x.name}</span></span>
-              <span class="shrink-0 font-bold tabular-nums">${fmt(x.value)}</span>
-            </li>`,
-          )}
-        </ul>
-        <p class="mt-1.5 flex justify-between gap-3 border-t border-money/30 pt-1.5 text-[13px] font-bold"><span>שווה</span><span class="tabular-nums">${fmt(worth)} בחודש</span></p>
-        <p class="flex items-baseline justify-between gap-3 font-bold"><span class="text-[15px]">חוסך לך</span><span class="font-display text-[20px] font-black tabular-nums">${fmt(flowbizNet())} בחודש</span></p>
-      </div>
-    </div>
-  </li>`;
-}
-
 function ExpensesTable({ s, up }) {
   const have = new Set(s.expenses.map((x) => x.name));
   const set = (id) => (patch) => up((d) => Object.assign(d.expenses.find((y) => y.id === id), patch));
@@ -290,13 +255,9 @@ function ExpensesTable({ s, up }) {
       <span>הוצאה</span><span>סכום</span><span>כל כמה זמן</span><span>מתי מתחיל</span><span></span>
     </div>
     <ul>
-      ${s.expenses.map((x) =>
-        x.flowbiz
-          ? html`<${FlowBizRow} key=${x.id} />`
-          : html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`,
-      )}
+      ${s.expenses.map((x) => html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`)}
     </ul>
-    ${!s.expenses.some((x) => !x.flowbiz) && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות אחרות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
+    ${!s.expenses.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
     <div class="flex items-center justify-between gap-3 border-t-2 border-ink/70 pt-3">
       <b class="text-[15px]">סך הכול בחודש</b><${Num} n=${fixedMonthly(s)} class="text-[17px]" />
     </div>
@@ -305,7 +266,7 @@ function ExpensesTable({ s, up }) {
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
       items=${sharkExpensesFor(s).filter((x) => !have.has(x.name))}
       label=${(x) => `${fmt(x.amount)} ${per(x.freq)}`}
-      onAdd=${({ note, stages, ...x }) => add(x)}
+      onAdd=${({ note, stages, extra, ...x }) => add(x.flowbiz ? { ...x, sub: note } : x)}
     />
 
   </div>`;
@@ -440,19 +401,6 @@ function Regular({ s, up }) {
 function SetupDone({ s, up }) {
   return html`<div>
     <${YesNo} value=${s.setupDone} onChange=${(v) => up((d) => (d.setupDone = v))} />
-    ${s.setupDone === true &&
-    html`<div class="rise mt-4 rounded-xl bg-money-50 p-3 text-money">
-      <p class="mb-1 flex items-center gap-1.5 text-[13px] font-bold"><${Icon} name=${SAVED_ICON} size=${15} />${g('גם אם כבר יש לך', 'גם אם כבר יש לך')}, FlowBiz בונה ${g('איתך', 'איתך')} מחדש:</p>
-      <ul class="text-[14px]">
-        ${FLOWBIZ_SETUP.map(
-          (x) => html`<li key=${x.id} class="flex items-center justify-between gap-3 py-0.5">
-            <span class="flex min-w-0 items-center gap-2"><${Icon} name=${x.icon} size=${15} class="shrink-0" /><span class="text-ink">${x.name}</span></span>
-            <span class="shrink-0 font-bold tabular-nums">${fmt(x.value)}</span>
-          </li>`,
-        )}
-      </ul>
-      <p class="mt-1.5 flex items-baseline justify-between gap-3 border-t border-money/30 pt-1.5 font-bold"><span class="text-[15px]">חסכת עם FlowBiz</span><span class="font-display text-[20px] font-black tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>
-    </div>`}
     ${s.setupDone === false &&
     html`<div class="rise mt-4">
       <p class="mb-2 text-[14px] text-muted">מה עוד נשאר לשלם? מה שנשאר יוצא מהכסף של העסק בתחזית.</p>
@@ -619,11 +567,6 @@ function Summary({ s }) {
       <p class=${cx('font-display text-[24px] font-black leading-tight', rw.months < 3 ? 'text-warn' : 'text-ink')}>${until}</p>
       <p class="mt-0.5 text-[12px] text-muted">${fmt(rw.free)} פנויים${fixedMonthly(s) > 0 ? ` ÷ ${fmt(fixedMonthly(s))} בחודש = ${num(rw.months, 1)} חודשים` : ', ועוד אין הוצאות קבועות'}</p>
     </div>`}
-    <div class="mt-3 rounded-xl bg-money-50 px-3 py-2 text-[13px] font-bold text-money">
-      <p class="mb-0.5 flex items-center gap-1.5"><${Icon} name=${SAVED_ICON} size=${15} />חסכת עם FlowBiz</p>
-      <p class="flex justify-between gap-2"><span>${s.stage === 'setup' || s.setupDone === false ? 'בהקמה' : 'שם, לוגו ודפים'}</span><span class="tabular-nums">${fmt(savedOf(FLOWBIZ_SETUP))}</span></p>
-      <p class="flex justify-between gap-2"><span>כל חודש, מעבר למנוי</span><span class="tabular-nums">${fmt(flowbizNet())}</span></p>
-    </div>
   </div>`;
 }
 
