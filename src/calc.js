@@ -20,7 +20,7 @@
 //   - The cash line: the owner takes out what the month left, up to the goal; a loss
 //     comes out of the business's money; what is above the goal stays in the business.
 //     In stage 3 the cushion set-aside comes first, until the cushion is full.
-import { SETTINGS, FIRST_MONTH, TODAY, payOf } from './data.js';
+import { SETTINGS, FIRST_MONTH, TODAY, payOf, needOf } from './data.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const SHORT = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -89,7 +89,7 @@ export const paidProducts = (s) => s.products.filter((p) => !p.free && p.price >
 export const missingOf = (p) => [p.price == null && 'מחיר', p.cost == null && 'עלות', p.hours == null && 'שעות'].filter(Boolean);
 // In how many months the money of one sale arrives: a program paid each month spreads
 // over its months; anything else arrives at once (card installments are the client's).
-export const paymentsOf = (p) => (payOf(p) !== 'monthly' ? 1 : p.kind === 'program' ? p.months || 1 : p.kind === 'one' ? p.payMonths || 3 : 1);
+export const paymentsOf = (p) => (payOf(p) === 'monthly' && p.kind === 'program' ? p.months || 1 : 1);
 const callHours = (s) => s.products.find((p) => p.id === 'e1')?.hours ?? 0.5;
 export const taxRate = (s) => (s.taxPct ?? 0) / 100;
 
@@ -540,10 +540,28 @@ export function fixes(s) {
     if (to < (s.goal || 0)) c.push({ id: 'goal', icon: 'target', title: `יעד של ${fmt(to)} בחודש לשנה הראשונה`, sub: `במקום ${fmt(s.goal)}. אפשר להעלות אותו כשהמספרים יגדלו`, make: (x) => ({ ...freeze(x), goal: to }) });
   }
 
-  // Cut the biggest expense that is not a must.
-  const cut = [...s.expenses].filter((x) => !x.flowbiz && (x.category === 'marketing' || x.category === 'tools')).sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
-  if (cut && monthlyCost(cut) >= 150) {
-    c.push({ id: 'cut', icon: 'scissors', title: `לוותר על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש`, make: (x) => ({ ...freeze(x), expenses: x.expenses.filter((e) => e.id !== cut.id) }) });
+  // Short on cash for a while: put the missing money in up front, so the business never
+  // goes below zero (the simplest fix when a few hundred or a few thousand are missing).
+  const low = now.fc.minRow;
+  if (low && low.cash < 0) {
+    const amt = Math.ceil(-low.cash / 500) * 500;
+    c.push({
+      id: 'cash-in',
+      icon: 'piggy-bank',
+      title: `להכניס לעסק ${fmt(amt)} מראש`,
+      sub: `ב${monthName(low.key)} חסרים ${fmt(-low.cash)}. כסף שנכנס עכשיו שומר שהעסק לא נכנס למינוס, עד שהמכירות מגיעות`,
+      make: (x) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + amt } }),
+      boost: amt <= 3000 ? 60000 : 0,
+    });
+  }
+
+  // Drop what can wait. Never marketing that brings the leads, never what the law needs:
+  // only expenses the shark marks "אפשר לחכות" (or the user's own small tools).
+  const cut = [...s.expenses]
+    .filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && needOf(x.name) === 3)
+    .sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
+  if (cut && monthlyCost(cut) >= 100) {
+    c.push({ id: 'cut', icon: 'scissors', title: `לוותר בינתיים על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש. אפשר להחזיר כשההכנסה מגיעה`, make: (x) => ({ ...freeze(x), expenses: x.expenses.filter((e) => e.id !== cut.id) }) });
   }
 
   return c
@@ -551,7 +569,7 @@ export function fixes(s) {
       const after = model(fx.make(s));
       const gap = (m) => Math.max(0, (s.goal || 0) - m.st.profit);
       // A lower goal is the last resort: it ranks after the fixes that change the business.
-      const impact = (after.score - now.score) * 10000 + (gap(now) - gap(after)) + (after.verdict.tone !== now.verdict.tone ? 50000 : 0) - (fx.id === 'goal' ? 45000 : 0);
+      const impact = (after.score - now.score) * 10000 + (gap(now) - gap(after)) + (after.verdict.tone !== now.verdict.tone ? 50000 : 0) - (fx.id === 'goal' ? 45000 : 0) + (after.score > now.score ? fx.boost || 0 : 0);
       return { ...fx, before: now, after, impact };
     })
     .filter((fx) => fx.impact > 0)

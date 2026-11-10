@@ -74,7 +74,8 @@ export const PAY = [
   { id: 'start', label: 'הכל בהתחלה' },
   { id: 'monthly', label: 'כל חודש' },
 ];
-export const payOf = (p) => p.pay ?? (p.kind === 'one' ? 'start' : 'monthly');
+// A single sale is always paid at once (Amit, 10.11): only programs and subscriptions choose.
+export const payOf = (p) => (p.kind === 'one' ? 'start' : p.pay ?? 'monthly');
 
 export const CATEGORIES = {
   marketing: { label: 'שיווק', icon: 'megaphone' },
@@ -110,10 +111,10 @@ const BUNDLE_NOTE = `המנוי והנהלת החשבונות: רואה חשבו
 const BUNDLE = { name: 'FlowBiz עם רואה חשבון', category: 'flowbiz', freq: 'monthly', day: 1, amount: withVat(FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT), shown: plusVat(FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT, ' בחודש'), flowbiz: 'bundle', note: BUNDLE_NOTE };
 export const SHARK_EXPENSES = [
   { name: 'FlowBiz', category: 'flowbiz', freq: 'monthly', day: 1, amount: withVat(FLOWBIZ_PRICE), shown: plusVat(FLOWBIZ_PRICE, ' בחודש'), flowbiz: 'system', note: FLOWBIZ_NOTE },
-  BUNDLE,
   { name: 'הנהלת חשבונות', category: 'pro', freq: 'monthly', day: 10, amount: { exempt: 250, licensed: 550 },
     note: { exempt: 'ליווי שוטף לעוסק פטור, בלי הדוח השנתי', licensed: 'עוסק מורשה: כולל דיווחי מע"מ ומקדמות' },
     fb: { ...BUNDLE, pitch: `רואה חשבון ב-${FLOWBIZ_ACCOUNTANT} ₪ + מע"מ בחודש, בחבילה עם המערכת: ${FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT} ₪ + מע"מ בחודש ביחד.`, market: { exempt: 'במחיר שוק: כ-250 ₪ בחודש, בלי המערכת', licensed: 'במחיר שוק: כ-550 ₪ בחודש, בלי המערכת' } } },
+  BUNDLE,
   { name: 'ביטוח לאומי (מינימום)', category: 'gov', freq: 'monthly', day: 15, amount: 265, note: 'המינימום לעצמאי ב-2026, גם בחודש בלי הכנסה' },
   { name: 'דוח שנתי לרואה חשבון', category: 'pro', freq: 'yearly', day: 1, amount: 1500, note: 'בדרך כלל 1,100-2,000 ₪' },
   { name: 'Zoom Pro', category: 'tools', freq: 'monthly', day: 1, amount: 57, note: 'רישיון אחד, תשלום חודשי' },
@@ -187,12 +188,36 @@ export const SHARK_SETUP = [
     ['חותמת עסק', 'stamp', 80, 'לחוזים ולקבלות'],
   ].map(([name, icon, planned, note]) => ({ name, icon, planned, note, extra: true })),
 ];
+// How urgent each suggestion is, for the order and the small label on the card:
+//   1 = חובה (the law, taxes, the client contract), 2 = חשוב (what brings and serves clients),
+//   3 = אפשר לחכות (nice to have; the first thing the shark offers to drop when money is short).
+// Anything not listed is 3.
+export const NEED_LABEL = { 1: 'חובה', 2: 'חשוב', 3: 'אפשר לחכות' };
+const NEED = {
+  'פתיחת תיק אצל רואה חשבון': 1, 'פתיחת תיק דרך FlowBiz': 1, 'חוזה לקוח מעורך דין': 1,
+  'הנהלת חשבונות': 1, 'FlowBiz עם רואה חשבון': 1, 'ביטוח לאומי (מינימום)': 1, 'דוח שנתי לרואה חשבון': 1, 'עמלות חשבון בנק עסקי': 1,
+  FlowBiz: 2, 'שם ולוגו': 2, 'דף נחיתה': 2, 'דף המסרים (קופירייטינג)': 2, 'קמפיין השקה': 2, 'מצלמת רשת ותאורה': 2, 'שם מתחם (דומיין)': 2,
+  'פרסום ממומן (פייסבוק ואינסטגרם)': 2, 'Zoom Pro': 2, 'ביטוח אחריות מקצועית': 2, 'אינטרנט (החלק של העסק)': 2,
+};
+export const needOf = (name) => NEED[name] ?? 3;
+const byNeed = (list) => list.map((x, i) => [x, i]).sort((a, b) => needOf(a[0].name) - needOf(b[0].name) || a[1] - b[1]).map(([x]) => ({ ...x, need: needOf(x.name) }));
+const ordered = (list) => [...byNeed(list.filter((x) => !x.extra)), ...byNeed(list.filter((x) => x.extra))];
+
 // The suggestions that fit this user, with the amount and the note for their entity.
 const forEntity = (v, s) => (v != null && typeof v === 'object' ? v[s.entity] ?? v.exempt : v);
 const fits = (x, s) => !x.stages || x.stages.includes(s.stage);
 const resolve = (x, s) => ({ ...x, amount: forEntity(x.amount, s), note: forEntity(x.note, s), start: x.start === 'next' ? FIRST_MONTH : 'now', fb: x.fb && { ...x.fb, market: forEntity(x.fb.market, s) } });
-export const sharkExpensesFor = (s) => SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => resolve(x, s));
-export const sharkSetupFor = (s) => SHARK_SETUP.filter((x) => fits(x, s)).map((x) => resolve(x, s));
+export const sharkExpensesFor = (s) => ordered(SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => resolve(x, s)));
+export const sharkSetupFor = (s) => ordered(SHARK_SETUP.filter((x) => fits(x, s)).map((x) => resolve(x, s)));
+// A row the user added that has a FlowBiz way (or is the FlowBiz way): what it switches to.
+export function fbSwitchOf(name, s, list) {
+  const all = list === 'setup' ? SHARK_SETUP : SHARK_EXPENSES;
+  const base = all.find((x) => x.fb && x.name === name);
+  if (base) return { to: 'fb', base: resolve(base, s), fb: resolve(base, s).fb };
+  const back = all.find((x) => x.fb && x.fb.name === name);
+  if (back) return { to: 'base', base: resolve(back, s), fb: resolve(back, s).fb };
+  return null;
+}
 // The FlowBiz row once the user added it (demo data uses the same).
 export const flowbizExpense = () => ({ id: 'x-flowbiz', name: 'FlowBiz', amount: withVat(FLOWBIZ_PRICE), category: 'flowbiz', freq: 'monthly', day: 1, start: 'now', flowbiz: 'system', sub: FLOWBIZ_NOTE });
 

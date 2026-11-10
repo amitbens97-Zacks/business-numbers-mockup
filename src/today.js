@@ -2,9 +2,9 @@
 // rest folded into one line each), with a live summary on the side. The setup and
 // expense tables are the finance center's, with what FlowBiz gives marked as saved.
 import { html, useState, useRef, useEffect, Icon, PencilCheck, cx } from './lib.js';
-import { Button, StepHeading, InlineEdit } from './components.js';
+import { Button, StepHeading, InlineEdit, How, CalcLines } from './components.js';
 import { Field, Tag, Sheet, NumEdit, Num } from './ui.js';
-import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, DEMO_REPORT, nextId, g, stageOf } from './data.js';
+import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, DEMO_REPORT, nextId, g, stageOf, fbSwitchOf, needOf, NEED_LABEL } from './data.js';
 import {
   fmt, num, monthName, monthYear, monthlyCost, FORECAST_MONTHS, setupSummary, itemLeft, savedOf, todayAvg, runway,
   fixedMonthly, isLicensed, cushionTarget, addMonth,
@@ -12,8 +12,29 @@ import {
 import { Money, YesNo } from './parts.js';
 
 const cell = (label, node, cls = '') => html`<div class=${cx('min-w-0', cls)}><span class="block text-[12px] font-bold text-muted md:hidden">${label}</span>${node}</div>`;
-// "חסכת עם FlowBiz": a plain note in the row, in the same look as the rest of the table.
-const Saved = () => html`<span class="text-[14px] font-bold text-muted">חסכת עם FlowBiz</span>`;
+// What FlowBiz will build: a plain note in the row (future tense: the steps are still ahead).
+const Saved = () => html`<span class="text-[14px] font-bold text-muted">${g('תחסוך', 'תחסכי')} עם FlowBiz</span>`;
+
+// On a row that has a FlowBiz way ("פתיחת תיק אצל רואה חשבון", "הנהלת חשבונות"): a small
+// button that opens it, with the market price, and switches the row. On the FlowBiz row:
+// a way back. So the choice can always be changed.
+function FbSwitch({ sw, onSwitch }) {
+  const [open, setOpen] = useState(false);
+  if (!sw) return null;
+  if (sw.to === 'base')
+    return html`<button type="button" class="text-[12px] font-bold text-muted hover:underline cursor-pointer" onClick=${() => onSwitch(sw.base)}>לחזור ל${sw.base.name}</button>`;
+  const fb = sw.fb;
+  return html`<div>
+    <button type="button" aria-expanded=${open} class="inline-flex h-7 items-center gap-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setOpen(!open)}><${Icon} name="piggy-bank" size=${13} />לחסוך עם FlowBiz</button>
+    ${open &&
+    html`<div class="rise mt-1 max-w-[420px] rounded-lg bg-canvas px-3 py-2 text-[13px]">
+      <p class="font-bold text-ink">${fb.name} · <span class="tabular-nums">${fb.shown}</span></p>
+      <p class="text-muted">${fb.pitch}</p>
+      <p class="text-muted">${fb.market}</p>
+      <button type="button" class="mt-1 inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => onSwitch(fb)}><${Icon} name="repeat" size=${13} />להחליף לזה</button>
+    </div>`}
+  </div>`;
+}
 
 // The shark's suggestions: every one that fits shows, and "עוד הצעות" brings 4 more on each
 // click (in production the model writes new ones every time: no limit). A suggestion with a
@@ -21,31 +42,13 @@ const Saved = () => html`<span class="text-[14px] font-bold text-muted">חסכת
 // market price beside it, in the same plain look.
 const BATCH = 4;
 function SharkCard({ x, label, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const fb = x.fb;
-  return html`<div class="flex flex-col rounded-xl border-[1.5px] border-brand-300 bg-white">
-    <button type="button" class="flex min-h-[56px] flex-1 items-start gap-2 rounded-xl px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
-      <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
-      <span class="min-w-0 flex-1">
-        <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
-        ${x.note && html`<small class="block text-[12px] leading-snug text-muted">${x.note}</small>`}
-      </span>
-    </button>
-    ${fb &&
-    html`<div class="border-t border-line px-3 pb-2 pt-1.5">
-      ${!open
-        ? html`<button type="button" class="inline-flex h-7 items-center gap-1 rounded-md px-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" aria-expanded="false" onClick=${() => setOpen(true)}><${Icon} name="piggy-bank" size=${13} />לחסוך עם FlowBiz</button>`
-        : html`<div class="rise text-[13px]">
-            <p class="font-bold text-ink">${fb.name} · <span class="tabular-nums">${fb.shown}</span></p>
-            <p class="text-muted">${fb.pitch}</p>
-            <p class="text-muted">${fb.market}</p>
-            <div class="mt-1 flex items-center gap-3">
-              <button type="button" class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(fb, x)}><${Icon} name="plus" size=${13} />להוסיף במקום</button>
-              <button type="button" class="text-[12px] font-bold text-muted hover:underline cursor-pointer" onClick=${() => setOpen(false)}>לסגור</button>
-            </div>
-          </div>`}
-    </div>`}
-  </div>`;
+  return html`<button type="button" class="flex min-h-[56px] items-start gap-2 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
+    <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
+    <span class="min-w-0 flex-1">
+      <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
+      <small class="block text-[12px] leading-snug text-muted"><span class=${cx('font-bold', x.need === 1 ? 'text-ink' : '')}>${NEED_LABEL[x.need || 3]}</span>${x.note ? ` · ${x.note}` : ''}</small>
+    </span>
+  </button>`;
 }
 function SharkChips({ title, items, onAdd, label }) {
   const [more, setMore] = useState(0);
@@ -56,7 +59,7 @@ function SharkChips({ title, items, onAdd, label }) {
   if (!items.length) return null;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
     <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
-    <p class="mb-2 text-[12px] text-muted">מחירי שוק כולל מע"מ, נובמבר 2026, אלא אם כתוב "+ מע"מ". אחרי שמוסיפים אפשר לשנות כל סכום.</p>
+    <p class="mb-2 text-[12px] text-muted">מסודר מהדחוף למה שיכול לחכות. מחירי שוק כולל מע"מ, נובמבר 2026, אלא אם כתוב "+ מע"מ". אחרי שמוסיפים אפשר לשנות כל סכום.</p>
     ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} />`)}</div>`}
     <button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setMore(more + BATCH)}>
       <${Icon} name="plus" size=${15} />עוד הצעות
@@ -71,13 +74,16 @@ const Trash = ({ name, onClick }) => html`<button type="button" class="grid h-9 
 
 const SETUP_COLS = 'md:grid-cols-[minmax(0,1fr)_112px_112px_104px_84px]';
 
-function SetupRow({ x, set, remove }) {
+function SetupRow({ x, set, remove, sw }) {
   const over = (x.spent || 0) - (x.planned || 0);
   const left = itemLeft(x);
   return html`<li class=${cx('grid grid-cols-4 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
     <div class="col-span-4 flex min-w-0 items-center gap-2.5 md:col-span-1">
       <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${x.icon || 'package'} size=${17} /></span>
-      <${InlineEdit} value=${x.name} placeholder="שם הפריט" onSave=${(v) => set({ name: v })} class=${cx('min-w-0 text-[15px] font-bold leading-tight', x.done && 'text-muted')} />
+      <span class="min-w-0">
+        <${InlineEdit} value=${x.name} placeholder="שם הפריט" onSave=${(v) => set({ name: v })} class=${cx('min-w-0 text-[15px] font-bold leading-tight', x.done && 'text-muted')} />
+        ${!x.done && html`<${FbSwitch} sw=${sw} onSwitch=${(y) => set({ name: y.name, icon: y.icon || x.icon, planned: y.planned })} />`}
+      </span>
       ${over > 0 && html`<${Tag} tone="fix">חריגה ${fmt(over)}<//>`}
       <span class="flex-1"></span>
       <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
@@ -208,7 +214,7 @@ function SetupTable({ s, up }) {
     <div class=${cx('mt-4 hidden pb-2 text-[12px] font-bold text-muted md:grid md:gap-x-3', SETUP_COLS)}>
       <span>פריט</span><span>תכננת</span><span>שולם</span><span>נשאר לשלם</span><span class="text-end">שולם במלואו</span>
     </div>
-    <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} />`))}</ul>
+    <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} sw=${fbSwitchOf(x.name, s, 'setup')} />`))}</ul>
     ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים. אפשר להוסיף פריט, או להתחיל מההצעות של הכריש.</p>`}
     ${b.unallocated > 0 &&
     html`<div class=${cx('grid grid-cols-4 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
@@ -243,12 +249,13 @@ const EXP_COLS = 'md:grid-cols-[minmax(0,1fr)_112px_112px_128px_36px]';
 const selCls = 'h-9 w-full rounded-lg border-[1.5px] border-line bg-white px-2 text-[14px] cursor-pointer outline-none focus:border-brand-600';
 const per = (f) => (f === 'weekly' ? 'בשבוע' : f === 'yearly' ? 'בשנה' : 'בחודש');
 
-function ExpenseRow({ x, set, remove }) {
+function ExpenseRow({ x, set, remove, sw, onSwitch }) {
   return html`<li class=${cx('grid grid-cols-2 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', EXP_COLS)}>
     <div class="col-span-2 flex min-w-0 items-center gap-2.5 md:col-span-1">
       <span class="min-w-0">
         <${InlineEdit} value=${x.name} placeholder="שם ההוצאה" onSave=${(v) => set({ name: v })} class="min-w-0 text-[15px] font-bold leading-tight" />
         ${x.sub && html`<small class="block text-[12px] leading-snug text-muted">${x.sub}</small>`}
+        <${FbSwitch} sw=${sw} onSwitch=${onSwitch} />
       </span>
       <span class="flex-1"></span>
       <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
@@ -274,19 +281,28 @@ function ExpensesTable({ s, up }) {
   const hasFb = s.expenses.some((x) => x.flowbiz);
   const hasBundle = s.expenses.some((x) => x.flowbiz === 'bundle');
   // A FlowBiz row replaces the FlowBiz row already there (the bundle includes the system).
-  const addSuggestion = ({ note, stages, extra, fb, shown, pitch, market, ...x }) =>
+  const addSuggestion = ({ note, stages, extra, fb, shown, pitch, market, need, ...x }) =>
     up((d) => {
       if (x.flowbiz) d.expenses = d.expenses.filter((y) => !y.flowbiz);
       d.expenses.push({ id: nextId('x'), start: 'now', ...x, sub: x.flowbiz ? note : undefined });
     }, `${x.name} נוסף`);
   const set = (id) => (patch) => up((d) => Object.assign(d.expenses.find((y) => y.id === id), patch));
+  // Switch a row to its FlowBiz way or back: the bundle also replaces the FlowBiz row.
+  const switchRow = (x, { note, stages, extra, fb, shown, pitch, market, need, ...y }) =>
+    up((d) => {
+      const i = d.expenses.findIndex((e) => e.id === x.id);
+      const row = { id: x.id, start: x.start || 'now', ...y, sub: y.flowbiz ? note : undefined };
+      if (!y.flowbiz) delete row.flowbiz;
+      d.expenses[i] = row;
+      if (y.flowbiz) d.expenses = d.expenses.filter((e) => e.id === x.id || !e.flowbiz);
+    }, `${y.name} במקום ${x.name}`);
   const add = (x) => up((d) => d.expenses.push({ id: nextId('x'), name: '', amount: null, category: 'other', freq: 'monthly', day: 1, start: 'now', ...x }), x?.name ? `${x.name} נוסף` : undefined);
   return html`<div>
     <div class=${cx('hidden pb-2 text-[12px] font-bold text-muted md:grid md:gap-x-3', EXP_COLS)}>
       <span>הוצאה</span><span>סכום</span><span>כל כמה זמן</span><span>מתי מתחיל</span><span></span>
     </div>
     <ul>
-      ${s.expenses.map((x) => html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`)}
+      ${s.expenses.map((x) => html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} sw=${!(hasBundle && !x.flowbiz) ? fbSwitchOf(x.name, s, 'expenses') : null} onSwitch=${(y) => switchRow(x, y)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`)}
     </ul>
     ${!s.expenses.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
     <div class="flex items-center justify-between gap-3 border-t-2 border-ink/70 pt-3">
@@ -570,7 +586,28 @@ function GuideSection({ sec, i, open, seen, onToggle, onNext, nextTitle, childre
 }
 
 // The live summary on the side: what the numbers so far say.
-function Summary({ s }) {
+// When the money lasts less than 3 months: what the shark would drop first. Only what can
+// wait ("אפשר לחכות"): a setup item not paid yet, or a fixed expense. The one that adds the most time.
+function cutTip(s, rw) {
+  if (!rw || rw.months >= 3 || fixedMonthly(s) <= 0) return null;
+  const setupOn = s.stage === 'setup' || s.setupDone === false;
+  const opts = [
+    ...(setupOn ? s.setup.filter((x) => !x.flowbiz && !x.done && itemLeft(x) > 0 && needOf(x.name) === 3).map((x) => ({ kind: 'setup', x, save: itemLeft(x), next: { ...s, setup: s.setup.filter((y) => y.id !== x.id), setupBudget: s.setupBudget == null ? null : Math.max(0, s.setupBudget - itemLeft(x)) } })) : []),
+    ...s.expenses.filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && needOf(x.name) === 3).map((x) => ({ kind: 'exp', x, save: monthlyCost(x), next: { ...s, expenses: s.expenses.filter((y) => y.id !== x.id) } })),
+  ].map((o) => ({ ...o, rw: runway(o.next) }));
+  return opts.sort((a, b) => b.rw.months - a.rw.months)[0] || null;
+}
+const spanOf = (rw) => {
+  if (rw.months === Infinity) return 'יותר משנתיים';
+  if (rw.months < 1) {
+    const w = Math.max(1, Math.round(rw.months * 4.3));
+    return w === 1 ? 'שבוע אחד' : w === 2 ? 'שבועיים' : `${w} שבועות`;
+  }
+  const m = num(rw.months, rw.months < 10 ? 1 : 0);
+  return m === '1' ? 'חודש אחד' : m === '2' ? 'חודשיים' : `${m} חודשים`;
+};
+
+function Summary({ s, up }) {
   const rw = runway(s);
   const avg = s.stage === 'setup' ? null : todayAvg(s);
   const b = setupSummary(s);
@@ -584,8 +621,19 @@ function Summary({ s }) {
     ['הוצאות קבועות בחודש', fixedMonthly(s)],
   ].filter(Boolean);
   const until = rw && (rw.free <= 0 ? 'אין כסף פנוי' : rw.until ? `עד ${monthYear(rw.until)}` : 'יותר משנתיים');
-  const span = rw && rw.free > 0 && rw.until ? (rw.months < 1 ? `${Math.max(1, Math.round(rw.months * 4.3))} שבועות` : `${num(rw.months, rw.months < 10 ? 1 : 0)} חודשים`) : '';
+  const span = rw && rw.free > 0 && rw.until ? spanOf(rw) : '';
   const setupLeft = s.stage === 'setup' || s.setupDone === false ? b.remaining : 0;
+  // Only once the fixed expenses are in: before that there is nothing to divide by.
+  const showRw = rw && (fixedMonthly(s) > 0 || (s.seen || []).includes('expenses'));
+  const tip = showRw && cutTip(s, rw);
+  const drop = (o) =>
+    up((d) => {
+      if (o.kind === 'setup') {
+        d.setup = d.setup.filter((y) => y.id !== o.x.id);
+        if (d.setupBudget != null) d.setupBudget = Math.max(0, d.setupBudget - o.save); // the money is free again
+      }
+      else d.expenses = d.expenses.filter((y) => y.id !== o.x.id);
+    }, `${o.x.name} ירד מהרשימה`);
   return html`<div class="fb-panel !p-4 md:!p-5">
     <h2 class="fb-h3 mb-2">התמונה עד עכשיו</h2>
     <dl class="text-[14px]">
@@ -595,13 +643,28 @@ function Summary({ s }) {
     html`<div class=${cx('mt-3 rounded-xl p-3', avg.left < 0 ? 'bg-warn-50' : 'bg-brand-50')}>
       <p class="text-[13px] font-bold text-muted">בחודש ממוצע היום נשארים</p>
       <p class=${cx('font-display text-[26px] font-black leading-tight tabular-nums', avg.left < 0 ? 'text-warn' : 'text-brand-600')}>${fmt(avg.left)}</p>
-      <p class="text-[12px] text-muted">נכנס ${fmt(avg.income)} · יוצא ${fmt(avg.out)} · מס ${fmt(avg.tax)}</p>
+      <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['פחות הפרשה למס', fmt(-avg.tax)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
     </div>`}
-    ${rw &&
+    ${showRw &&
     html`<div class=${cx('mt-3 rounded-xl p-3', rw.months < 3 ? 'bg-warn-50' : 'bg-canvas')}>
       <p class="text-[13px] font-bold text-muted">${s.stage === 'setup' ? 'בלי הכנסה בכלל, הכסף מחזיק' : 'בלי מכירות חדשות, הכסף מחזיק'}</p>
       <p class=${cx('font-display text-[24px] font-black leading-tight', rw.months < 3 ? 'text-warn' : 'text-ink')}>${until}${span && html`<span class="ms-1.5 text-[15px] font-bold">· ${span}</span>`}</p>
-      <p class="mt-0.5 text-[12px] text-muted">${setupLeft > 0 ? `${fmt(rw.free + setupLeft)} פחות ${fmt(setupLeft)} להקמה (כאילו כבר שולם) = ` : ''}${fmt(rw.free)} פנויים${fixedMonthly(s) > 0 ? ` ÷ ${fmt(fixedMonthly(s))} בחודש` : ', ועוד אין הוצאות קבועות'}</p>
+      <${How}><${CalcLines}
+        lines=${[
+          ['כסף בעסק היום', fmt(s.bank.amount)],
+          s.stage !== 'setup' && toComeOf(s) > 0 && ['ועוד כסף שעוד מגיע', fmt(toComeOf(s))],
+          setupLeft > 0 && ['פחות מה שנשאר לשלם על ההקמה', fmt(-setupLeft)],
+          ['פנוי', fmt(rw.free), true],
+          fixedMonthly(s) > 0 && ['÷ הוצאות קבועות בחודש', fmt(fixedMonthly(s))],
+          fixedMonthly(s) > 0 && rw.free > 0 && ['= מחזיק', spanOf(rw), true],
+        ]}
+        note=${setupLeft > 0 ? 'מה שנשאר לשלם על ההקמה נחשב כאילו כבר שולם.' : ''}
+      /><//>
+    </div>`}
+    ${tip &&
+    html`<div class="mt-3 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3 text-[14px]">
+      <p class="flex items-start gap-2"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 shrink-0 rounded-full bg-white" /><span><b>הכריש:</b> ${tip.x.name} ${tip.kind === 'setup' ? `(${fmt(tip.save)})` : `(${fmt(tip.save)} בחודש)`} יכול לחכות. בלי זה הכסף מחזיק ${spanOf(tip.rw)}.</span></p>
+      <button type="button" class="mt-1.5 inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => drop(tip)}><${Icon} name="scissors" size=${13} />לוותר בינתיים</button>
     </div>`}
   </div>`;
 }
@@ -647,7 +710,7 @@ export function TodayScreen({ s, up, onStage }) {
           ><${sec.Body} s=${s} up=${up} /><//>`,
         )}
       </div>
-      <aside id="today-summary" class="scroll-mt-4 lg:sticky lg:top-4"><${Summary} s=${s} /></aside>
+      <aside id="today-summary" class="scroll-mt-4 lg:sticky lg:top-4"><${Summary} s=${s} up=${up} /></aside>
     </div>
   </div>`;
 }

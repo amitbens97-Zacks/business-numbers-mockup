@@ -1,7 +1,7 @@
 // Step 5, parts 3-5: the goal, how much to sell, and the annual forecast with the four
 // checks and the fixes.
 import { html, useState, Icon, cx } from './lib.js';
-import { Button, Note, StepHeading, PartnerNote, FillButton, SharkAvatar } from './components.js';
+import { Button, Note, StepHeading, PartnerNote, FillButton, SharkAvatar, How, CalcLines } from './components.js';
 import { Chips, Field, inputCls, Tag, Sheet } from './ui.js';
 import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
 import { Money, Stepper, Section, Result } from './parts.js';
@@ -154,11 +154,18 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך 5 · ${PARTS[3]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מהיעד אחורה: כמה העסק צריך להכניס, מאיזה מוצרים, וכמה לידים ושיחות זה אומר." />
     <${Result} icon="calculator" title=${`כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס`} big=${`${fmt(st.needed)} בחודש`}>
-      <span class="block text-[14px]">
-        היעד ${fmt(s.goal)} + הוצאות קבועות ${fmt(st.fixed)} + עלויות המוצרים ${fmt(st.cogs)}${st.setAside ? ` + כרית ${fmt(st.setAside)}` : ''} = <b>${fmt(s.goal + st.fixed + st.cogs + st.setAside)}</b>.
-        מכל שקל שנכנס, ${s.taxPct}% הולכים להפרשה למס, אז צריך להכניס ${fmt(st.needed)}.
-      </span>
-      ${isLicensed(s) && html`<span class="mt-1 block text-[14px]">עם המע"מ, הלקוחות משלמים ${fmt(st.needed * (1 + SETTINGS.vatPct / 100))}.</span>`}
+      <span class="block text-[14px]">היעד, ועוד כל ההוצאות, ועוד ההפרשה למס.</span>
+      <${How}><${CalcLines}
+        lines=${[
+          ['היעד: מה שנשאר לך', fmt(s.goal)],
+          ['+ הוצאות קבועות', fmt(st.fixed)],
+          ['+ עלויות המוצרים', fmt(st.cogs)],
+          st.setAside > 0 && ['+ לכרית הביטחון', fmt(st.setAside)],
+          ['ביחד', fmt(s.goal + st.fixed + st.cogs + st.setAside), true],
+          [`÷ ${100 - s.taxPct}% (${s.taxPct}% מכל שקל הולכים למס)`, fmt(st.needed), true],
+          isLicensed(s) && ['עם המע"מ, הלקוחות משלמים', fmt(st.needed * (1 + SETTINGS.vatPct / 100))],
+        ]}
+      /><//>
     <//>
 
     <div class="grid items-start gap-5 lg:grid-cols-[1fr_340px]">
@@ -195,6 +202,14 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
             כש-${a.leadToCall}% מהפניות קובעות שיחה, צריך שיגיעו אליך <b>${num(st.leads)} פניות</b> בחודש.
             ${avg ? html` היום מגיעים בממוצע ${clientsText(avg.clients)} חדשים בחודש.` : ''}
           </p>
+          <${How} class="mt-1"><${CalcLines}
+            lines=${[
+              ['לקוחות חדשים בחודש מלא', num(st.newClients, 1)],
+              [`÷ ${a.closeRate}% מהשיחות קונות`, `${num(st.calls, 1)} שיחות`, true],
+              [`÷ ${a.leadToCall}% מהפניות קובעות שיחה`, `${num(st.leads, 1)} פניות`, true],
+            ]}
+            note=${`לקוחות חדשים = מכירות בחודש${monthly && (mix[monthly.id] || 0) > 0 ? `, ובמנוי: לקוחות פעילים ÷ ${a.stayMonths} חודשים שלקוח נשאר בממוצע` : ''}. השבוע = החודש × 12 ÷ 52.`}
+          /><//>
           <p class="mt-2 text-[13px] text-muted">פנייה (ליד) = מי שהשאיר פרטים, שלח הודעה או ביקש לשמוע עוד. איך מביאים את הפניות: על זה עובדים בפרקים הבאים, בדף הנחיתה, במכונת התוכן ובלקוחות המשלמים.</p>
         <//>
         <${Assumptions} s=${s} up=${up} />
@@ -377,10 +392,24 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
     >
       <p class="font-display text-[24px] font-black leading-tight">תוך ${fc.ramp} חודשים${reach ? html`<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : ''}</p>
       <p class="mb-1 text-[14px]">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(m.st.income)} בחודש.</p>
-      <p class="mb-3 text-[14px] text-muted">${rampWhy(s, fc)}</p>
+      <p class="text-[14px] text-muted">${rampWhy(s, fc)}</p>
+      <${How} class="mb-3"><${CalcLines}
+        lines=${fc.plan.fresh
+          ? [['לקוחות חדשים שצריך בחודש מלא', num(fc.plan.need, 1)], ['מתחילים מ', 'לקוח אחד'], [`גדלים עד ${fc.plan.grow}% בכל חודש`, `${num(fc.plan.raw, 1)} חודשים`], ['מעוגל, בין 3 ל-12', `${fc.plan.months} חודשים`, true]]
+          : [['לקוחות חדשים בחודש היום', num(fc.plan.from, 1)], ['צריך בחודש מלא', num(fc.plan.need, 1)], ['פי', num(fc.plan.ratio, 1)], [`גדלים עד ${fc.plan.grow}% בכל חודש`, `${num(Math.max(0, fc.plan.raw), 1)} חודשים`], ['מעוגל, בין 3 ל-12', `${fc.plan.months} חודשים`, true]]}
+        note=${fc.plan.fresh ? 'חודשים = 1 + ln(צריך) ÷ ln(1.2). עסק חדש גדל מהר יותר מבסיס קטן.' : 'חודשים = ln(צריך ÷ היום) ÷ ln(1.1). 10% בחודש זה הקו הירוק של בדיקת הקצב.'}
+      /><//>
       <div class="mb-4 flex flex-wrap items-center gap-2"><span class="text-[13px] font-bold text-muted">לשנות:</span><${Chips} small options=${opts} value=${s.ramp ?? 'auto'} onChange=${(v) => up((d) => (d.ramp = v === 'auto' ? null : v))} /></div>
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
       <p class=${cx('mt-4 rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}>בשנה הקרובה יישאר לך <b class="tabular-nums">${fmt(fc.yearProfit)}</b>, מול יעד שנתי של ${fmt(fc.annualGoal)}: <b class=${yearOk ? 'text-money' : 'text-warn'}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b>. <span class="text-muted">כולל החודשים עד שמגיעים ליעד.</span></p>
+      <${How} class="mt-1"><${CalcLines}
+        lines=${[
+          ['מה שנשאר בכל חודש, 12 חודשים ביחד', fmt(fc.yearProfit), true],
+          [`היעד: ${fmt(s.goal)} × 12`, fmt(fc.annualGoal)],
+          [yearOk ? 'מעל היעד' : 'חסר ליעד', fmt(Math.abs(fc.yearProfit - fc.annualGoal)), true],
+        ]}
+        note="בכל חודש: הכנסות, פחות הוצאות קבועות, עלויות המוצרים ומס. בחודשים הראשונים המכירות עוד גדלות, ולכן נשאר פחות."
+      /><//>
       ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
     <//>
     ${ceiling &&
@@ -398,7 +427,6 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
       <ul class="text-[14px]">${s.applied.map((a) => html`<li key=${a.id + a.at} class="flex items-center gap-2 py-0.5"><${Icon} name="check" size=${15} class="text-brand-600" />${a.title}${a.basket ? html`<${Tag}>עודכן בסל<//>` : ''}</li>`)}</ul>
     </div>`}
     <${Basis} s=${s} m=${m} />
-    <div class="flex flex-wrap items-center gap-3">
     <div class="flex flex-wrap items-center gap-3">
       <${Button} variant="secondary" onClick=${() => setChat(true)}><${SharkAvatar} size=${26} />לדבר על זה עם הכריש<//>
       ${m.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה. התוכנית תראה מה עוד לא מסתדר.</p>`}

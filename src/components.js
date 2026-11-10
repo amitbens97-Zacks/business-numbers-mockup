@@ -187,6 +187,19 @@ export function PrimaryButton({ label, onClick, disabled, check }) {
 
 // ---------- Step heading, written straight on the page ----------
 
+// "איך זה חושב": a small button next to every explanation; the calculation opens under it.
+export function How({ children, class: cls = '', label = 'איך זה חושב' }) {
+  const [open, setOpen] = useState(false);
+  return html`<div class=${cls}>
+    <button type="button" aria-expanded=${open} class="inline-flex h-7 items-center gap-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setOpen(!open)}><${Icon} name=${open ? 'chevron-up' : 'calculator'} size=${13} />${label}</button>
+    ${open && html`<div class="rise mt-1 rounded-lg bg-white/80 px-2.5 py-1.5 text-[13px] ring-1 ring-line">${children}</div>`}
+  </div>`;
+}
+// Lines of a calculation: [label, value, total?]
+export const CalcLines = ({ lines, note }) => html`<dl>
+    ${lines.filter(Boolean).map(([k, v, main]) => html`<div key=${k} class=${cx('flex items-baseline justify-between gap-3 py-0.5', main && 'mt-0.5 border-t border-line pt-1 font-bold')}><dt class="min-w-0">${k}</dt><dd class="shrink-0 tabular-nums">${v}</dd></div>`)}
+  </dl>${note && html`<p class="mt-1 text-[12px] text-muted">${note}</p>`}`;
+
 export function StepHeading({ n, eyebrow, title, sub, children }) {
   return html`<div class="fb-heading mb-4">
     <span class="fb-wm" aria-hidden="true">${n}</span>

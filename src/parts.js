@@ -1,7 +1,7 @@
 // Step 5 "העסק במספרים": shared inputs, the opening, the stage question and part 2 (the
 // prices, written back to the basket). Part 1 lives in today.js.
 import { html, useState, useRef, Icon, cx, parseNum } from './lib.js';
-import { Button, Note, StepHeading } from './components.js';
+import { Button, Note, StepHeading, How, CalcLines } from './components.js';
 import { Chips, Field, inputCls, Tag } from './ui.js';
 import { STAGES, PARTS, PAY, SETTINGS, nextId, g, payOf } from './data.js';
 import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed } from './calc.js';
@@ -137,22 +137,19 @@ export function cashText(p, stay = 3) {
   const pay = payOf(p);
   if (p.kind === 'monthly')
     return pay === 'start' ? `${fmt(p.price * stay)} מראש, על ${stay} חודשים (כמה שלקוח נשאר בממוצע)` : `${fmt(p.price)} בכל חודש, כל עוד הלקוח נשאר`;
-  if (pay === 'monthly') {
-    const n = p.kind === 'program' ? p.months || 1 : p.payMonths || 3;
-    return `${fmt(p.price / n)} בכל חודש, ${n} חודשים`;
-  }
+  if (pay === 'monthly') return `${fmt(p.price / (p.months || 1))} בכל חודש, ${p.months} חודשים`;
   return `${fmt(p.price)} בבת אחת, בחודש של המכירה`;
 }
 
-// When the money reaches the business: all at the start, or each month. The default
-// follows the kind of product (payOf), and the user can change it for every product.
+// When the money reaches the business: all at the start, or each month (programs and
+// subscriptions; the default follows the kind). A single sale is always paid at once.
 function PayQuestion({ p, set, stay }) {
   const pay = payOf(p);
   return html`<div>
     <p class="mb-1 text-[13px] font-bold">מתי הכסף נכנס לעסק?</p>
-    <${Chips} small options=${PAY} value=${pay} onChange=${(v) => set((x) => (x.pay = v))} />
-    ${p.kind === 'one' && pay === 'monthly' &&
-    html`<div class="rise mt-2 flex items-center gap-2 text-[13px]"><span class="font-bold">על כמה חודשים?</span><${Stepper} label="על כמה חודשים" min=${2} value=${p.payMonths || 3} onChange=${(v) => set((x) => (x.payMonths = v))} /></div>`}
+    ${p.kind === 'one'
+      ? html`<${Tag} tone="blue"><${Icon} name="banknote" size=${13} />בבת אחת<//>`
+      : html`<${Chips} small options=${PAY} value=${pay} onChange=${(v) => set((x) => (x.pay = v))} />`}
     <p class="mt-1.5 text-[13px] font-semibold text-brand-600">${cashText(p, stay)}</p>
   </div>`;
 }
@@ -188,8 +185,17 @@ function ProductCard({ s, p, set, onBasket }) {
       <p class="text-[15px]">
         ${g('כמה אתה מרוויח', 'כמה את מרוויחה')} על שעת עבודה:
         <b class="ms-1 font-display text-[20px] tabular-nums text-brand-600">${ph != null && !miss.length ? fmt(ph) : '—'}</b>
-        ${isLicensed(s) && p.price ? html`<span class="block text-[12px] text-muted">מתוך ${fmt(p.price)} נשארים לך ${fmt(netPrice(s, p))}, השאר מע"מ</span>` : ''}
       </p>
+      ${ph != null && !miss.length && html`<${How} class="-mt-2"><${CalcLines}
+        lines=${[
+          ['מחיר', fmt(p.price)],
+          isLicensed(s) && ['פחות מע"מ (עובר למדינה)', fmt(-(p.price - netPrice(s, p)))],
+          p.cost > 0 && ['פחות עלות למכירה', fmt(-p.cost)],
+          ['נשאר מכל מכירה', fmt(netPrice(s, p) - (p.cost || 0)), true],
+          [`÷ ${num(p.hours)} שעות עבודה`, `${fmt(ph)} לשעה`, true],
+        ]}
+        note=${p.kind === 'monthly' ? 'לכל חודש של לקוח: המחיר לחודש ÷ השעות בחודש.' : ''}
+      /><//>`}
       <${PayQuestion} p=${p} set=${set} stay=${s.assumptions.stayMonths || 3} />
     </div>
   </article>`;
@@ -207,7 +213,7 @@ function NewProduct({ onAdd, onCancel, first }) {
     html`<div class="rise mb-4 flex flex-wrap items-end gap-5">
       <div><p class="mb-1 text-[14px] font-bold">כמה חודשים?</p><${Stepper} label="כמה חודשים" min=${2} value=${d.months} onChange=${(v) => setD({ ...d, months: v })} /></div>
     </div>`}
-    <div class="mb-4"><p class="mb-1 text-[14px] font-bold">מתי הכסף נכנס לעסק?</p><${Chips} small options=${PAY} value=${payOf(d)} onChange=${(v) => setD({ ...d, pay: v })} /></div>
+    ${d.kind !== 'one' && html`<div class="mb-4"><p class="mb-1 text-[14px] font-bold">מתי הכסף נכנס לעסק?</p><${Chips} small options=${PAY} value=${payOf(d)} onChange=${(v) => setD({ ...d, pay: v })} /></div>`}
     <div class="grid gap-3 sm:grid-cols-3">
       <${Field} class="!mb-0" label="מחיר" hint="כולל מע״מ"><${Money} label="מחיר" value=${d.price} onChange=${(v) => setD({ ...d, price: v })} /><//>
       <${Field} class="!mb-0" label="עלות למכירה"><${Money} label="עלות" value=${d.cost} onChange=${(v) => setD({ ...d, cost: v })} /><//>
