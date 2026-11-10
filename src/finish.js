@@ -7,7 +7,7 @@ import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, FINANCE_URL, FINANCE_SCENAR
 import { cashText } from './parts.js';
 import {
   fmt, num, monthYear, todayText, todayAvg, runway, fixedMonthly, setupSummary, cushionTarget, setAsideMonthly,
-  paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling,
+  paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling, asLicensed,
 } from './calc.js';
 import { ForecastChart, ForecastLegend } from './chart.js';
 import { Checks, Verdict, Quarters } from './plan.js';
@@ -22,7 +22,7 @@ export function DocScreen({ s, m }) {
   const avg = s.stage === 'setup' ? null : todayAvg(s);
   const rw = runway(s);
   const ps = paidProducts(s);
-  const ent = overCeiling(s) ? 'עוסק מורשה (בתוכנית עוברים את תקרת עוסק פטור)' : ENTITIES.find((e) => e.id === s.entity).label;
+  const ent = ENTITIES.find((e) => e.id === s.entity).label;
   return html`<div class="mx-auto max-w-[860px] px-4 py-6 md:px-8">
     <div class="no-print mb-3 flex flex-wrap items-center justify-between gap-2">
       <p class="fb-eyebrow">התוצר של השלב</p>
@@ -62,6 +62,7 @@ export function DocScreen({ s, m }) {
       <table class="w-full text-[15px]"><tbody>
         <${Row} k="נשאר לך בכל חודש" v=${fmt(s.goal)} strong />
         <${Row} k="בשנה" v=${fmt(fc.annualGoal)} />
+        ${overCeiling(s) && html`<${Row} k="תקרת עוסק פטור" v=${`בחודש מלא עוברים אותה. כעוסק מורשה יישארו ${fmt(asLicensed(s).left)} בחודש`} />`}
         <${Row} k="מס וביטוח לאומי" v=${`${taxPctOf(s)}% מהרווח (${ent})`} />
         ${s.stage === 'active' && html`<${Row} k="כרית ביטחון" v=${`${fmt(cushionTarget(s))}${setAsideMonthly(s) ? ` · ${fmt(setAsideMonthly(s))} בחודש` : ' · מלאה'}`} />`}
       </tbody></table>

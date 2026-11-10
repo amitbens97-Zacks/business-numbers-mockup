@@ -4,7 +4,7 @@ import { html, useState, useRef, Icon, cx, parseNum } from './lib.js';
 import { Button, Note, StepHeading, How, CalcLines } from './components.js';
 import { Chips, Field, inputCls, Tag } from './ui.js';
 import { STAGES, PARTS, PAY, SETTINGS, nextId, g, payOf, FROM_STEP2 } from './data.js';
-import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed, overCeiling } from './calc.js';
+import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed } from './calc.js';
 
 // ---------- small shared inputs ----------
 
@@ -236,7 +236,7 @@ export function PricesScreen({ s, up, notify, undoTo }) {
   };
   return html`<div class="mx-auto max-w-[1000px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 2 מתוך 5 · ${PARTS[1]}`} title=${['כמה כל מוצר ', 'מכניס', '?']} sub="המוצרים מהסל שלך. כל שינוי כאן נשמר גם בסל המוצרים." />
-    ${isLicensed(s) && html`<${Note} tone="white" tilt=${-0.6} class="mb-5 max-w-xl"><span class="fb-note-kicker">${overCeiling(s) ? 'מעל תקרת עוסק פטור' : 'עוסק מורשה'}</span>${overCeiling(s) ? `בתוכנית שלך העסק עובר את תקרת עוסק פטור, אז הוא יהיה עוסק מורשה. ` : ''}המחירים כוללים מע"מ. מכל מכירה ${SETTINGS.vatPct}% עוברים למדינה, אז החישובים כאן לוקחים רק את מה שנשאר לך.<//>`}
+    ${isLicensed(s) && html`<${Note} tone="white" tilt=${-0.6} class="mb-5 max-w-xl"><span class="fb-note-kicker">עוסק מורשה</span>המחירים כוללים מע"מ. מכל מכירה ${SETTINGS.vatPct}% עוברים למדינה, אז החישובים כאן לוקחים רק את מה שנשאר לך.<//>`}
     ${paid.length === 0 && !adding && html`<${NewProduct} first onAdd=${(np) => up((d) => d.products.push(np), `${np.name} נכנס לסל המוצרים`)} />`}
     <div class="flex flex-col gap-4">
       ${paid.map((p) => html`<${ProductCard} key=${p.id} s=${s} p=${p} set=${(fn) => up((d) => fn(d.products.find((x) => x.id === p.id)))} onBasket=${onBasket} />`)}

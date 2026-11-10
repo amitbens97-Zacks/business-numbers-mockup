@@ -7,7 +7,7 @@
 import { html, render, useState, useEffect, useRef, Icon, cx } from './lib.js';
 import { Logo, PartnerBubble, Progress, TopBar, BottomBar, Status, PrimaryButton, Button, Toast } from './components.js';
 import { STEP, PARTS, STEP_SCREENS, SCENARIOS, DEFAULT_SCENARIO, HISTORY_FIRST, g } from './data.js';
-import { model, missingOf, paidProducts, todayText } from './calc.js';
+import { model, missingOf, paidProducts, todayText, taxPctOf, fixBaseOf, withPicks } from './calc.js';
 import { Opening, StageScreen, PricesScreen } from './parts.js';
 import { TodayScreen, ALL_SECTIONS, historyMissing } from './today.js';
 import { GoalScreen, SellScreen, ForecastScreen } from './plan.js';
@@ -151,6 +151,10 @@ function App({ view: shellView, onViewChange }) {
     const prev = sRef.current;
     const next = clone(prev);
     fn(next);
+    if (next.fixBase && route.screen !== 'forecast') {
+      next.fixBase = null;
+      next.picks = [];
+    }
     setS(next);
     setSave('saving');
     clearTimeout(timers.current.save);
@@ -187,12 +191,29 @@ function App({ view: shellView, onViewChange }) {
     setMaxPart(4);
     toScreen(id);
   };
+  // Part 5: pick a fix, or take it back. The state is rebuilt from before the first pick.
   const applyFix = (fx) => {
     const prev = sRef.current;
-    const next = fx.make(clone(prev));
-    next.applied = [...prev.applied, { id: fx.id, title: fx.title, basket: !!fx.basket, at: Date.now() }];
+    const base = prev.fixBase || fixBaseOf(prev);
+    const was = prev.picks || [];
+    const on = was.some((p) => p.id === fx.d.id);
+    const picks = on ? was.filter((p) => p.id !== fx.d.id) : [...was, fx.d];
+    const next = clone(withPicks(prev, base, picks));
+    next.picks = picks;
+    next.fixBase = picks.length ? base : null;
+    next.applied = picks.map((d) => ({ id: d.id, title: d.title, basket: d.basket, at: 0 }));
     setS(next);
-    notify(fx.basket ? `${fx.title}. עודכן גם בסל המוצרים` : fx.title, 'wand-sparkles', () => undoTo(prev));
+    notify(on ? `ביטלת: ${fx.title}` : fx.basket ? `${fx.title}. עודכן גם בסל המוצרים` : fx.title, on ? 'rotate-ccw' : 'wand-sparkles', () => undoTo(prev));
+  };
+  const clearPicks = () => {
+    const prev = sRef.current;
+    if (!prev.fixBase) return;
+    const next = clone(withPicks(prev, prev.fixBase, []));
+    next.picks = [];
+    next.fixBase = null;
+    next.applied = [];
+    setS(next);
+    notify('ביטלת את כל השינויים', 'rotate-ccw', () => undoTo(prev));
   };
   const openFinance = () => window.open(financeLink(s), '_blank', 'noopener');
 
@@ -256,7 +277,7 @@ function App({ view: shellView, onViewChange }) {
     prices: html`<${PricesScreen} ...${props} />`,
     goal: html`<${GoalScreen} ...${props} />`,
     sell: html`<${SellScreen} ...${props} />`,
-    forecast: html`<${ForecastScreen} ...${props} onApply=${applyFix} />`,
+    forecast: html`<${ForecastScreen} ...${props} onApply=${applyFix} onClearPicks=${clearPicks} />`,
     doc: html`<${DocScreen} ...${props} />`,
     done: html`<${Done} s=${s} />`,
   }[screen];
@@ -276,6 +297,7 @@ function App({ view: shellView, onViewChange }) {
         />`
       : html`<${BottomBar}
           back=${screen !== 'opening' && html`<${Button} variant="secondary" onClick=${() => toScreen(prevScreen)}>חזרה<//>`}
+          extra=${screen === 'goal' && html`<span key=${taxPctOf(s)} class="rise inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-[14px] font-bold text-brand-600" role="status" aria-live="polite"><${Icon} name="percent" size=${15} />מס וביטוח לאומי: <span class="font-display text-[17px] font-black tabular-nums">${taxPctOf(s)}%</span></span>`}
           status=${html`<${Status} undo=${null} reason=${reason} save=${inParts ? save : null} hint=${screen === 'forecast' && m.verdict.tone !== 'ok' ? (m.verdict.tone === 'bad' ? 'אפשר לסיים גם עם בדיקה אדומה' : 'אפשר לסיים גם ככה') : null} />`}
           primary=${html`<${PrimaryButton}
             label=${label}

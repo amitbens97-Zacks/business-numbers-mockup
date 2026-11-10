@@ -87,25 +87,23 @@ export const savedOf = (list) => list.reduce((t, x) => t + x.value, 0);
 // ---------- prices ----------
 
 export const vatRate = () => SETTINGS.vatPct / 100;
-// Above the exempt ceiling the business has to be licensed. If the full month of an exempt
-// business is over the ceiling in a year, the plan (what to sell, the forecast, the checks)
-// counts VAT: 18% of every price goes to the state. The mix is the one as exempt (_raw), so
-// there is no loop. Cached per state object.
-const overCache = new WeakMap();
-export function overCeiling(s) {
-  if (s.entity !== 'exempt' || s._raw) return false;
-  if (overCache.has(s)) return overCache.get(s);
-  overCache.set(s, false);
-  const raw = { ...s, _raw: true };
-  const year = steady(raw, mixOf(raw)).gross * 12;
-  const v = year > SETTINGS.exemptCeiling;
-  overCache.set(s, v);
-  return v;
+// The exempt ceiling. The plan always follows the type the user chose: start exempt, and
+// switch when the money really passes the ceiling. The step only informs (what the full
+// month brings in a year, and what is left as licensed), and recommends switching only when
+// the business is over the ceiling already today (stages 2-3, by today's average).
+export const fullYearGross = (s) => steady(s, mixOf(s)).gross * 12;
+export const overCeiling = (s) => s.entity === 'exempt' && fullYearGross(s) > SETTINGS.exemptCeiling;
+export const overCeilingToday = (s) => {
+  if (s.entity !== 'exempt' || s.stage === 'setup') return false;
+  const a = todayAvg(s);
+  return !!a && a.gross * 12 > SETTINGS.exemptCeiling;
+};
+// The full month as licensed, same mix: what would be left.
+export function asLicensed(s) {
+  const st = steady({ ...s, entity: 'licensed' }, mixOf(s));
+  return { st, left: st.profit - st.setAside };
 }
-// The full month in a year, at the prices the clients pay.
-export const fullYearGross = (s) => { const raw = { ...s, _raw: true }; return steady(raw, mixOf(raw)).gross * 12; };
-export const isLicensed = (s) => s.entity === 'licensed' || overCeiling(s);
-// What the user registered as (the past: history, money already agreed).
+export const isLicensed = (s) => s.entity === 'licensed';
 const wasLicensed = (s) => s.entity === 'licensed';
 export const netPrice = (s, p) => (isLicensed(s) ? p.price / (1 + vatRate()) : p.price);
 export const profitPerSale = (s, p) => netPrice(s, p) - (p.cost || 0);
@@ -638,6 +636,29 @@ export function model(s, key = 'real') {
 
 const freeze = (s) => ({ ...s, mix: mixOf(s), applied: s.applied });
 
+// A fix as data (d): what it changes. applyFix makes the new state; withPicks starts from the
+// state before any fix (fixBase: only the fields fixes change) and adds the picked ones, so the
+// user can pick a few, and take any one back. More hours goes first: it re-runs the mix.
+export function applyFix(x, d) {
+  const mixed = (fn) => { const m = { ...mixOf(x) }; fn(m); return { ...x, mix: m }; };
+  switch (d.id) {
+    case 'price': return { ...freeze(x), products: x.products.map((p) => (p.id === d.pid ? { ...p, price: d.to } : p)) };
+    case 'shift': return mixed((m) => { m[d.from] = Math.max(0, (m[d.from] || 0) - 1); m[d.to] = (m[d.to] || 0) + 1; });
+    case 'monthly': return mixed((m) => { m[d.pid] = (m[d.pid] || 0) + 1; });
+    case 'hours': return { ...x, mix: null, assumptions: { ...x.assumptions, hoursMonth: (x.assumptions.hoursMonth || 0) + d.add } };
+    case 'goal': return { ...freeze(x), goal: d.to };
+    case 'cash-in': return { ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + d.amt } };
+    case 'cut': return { ...freeze(x), expenses: x.expenses.filter((e) => e.id !== d.xid) };
+    default: return x;
+  }
+}
+export const fixBaseOf = (s) => JSON.parse(JSON.stringify({ products: s.products, mix: s.mix, hoursMonth: s.assumptions.hoursMonth, goal: s.goal, bank: s.bank, expenses: s.expenses }));
+export function withPicks(s, base, picks) {
+  let x = { ...s, products: base.products, mix: base.mix, assumptions: { ...s.assumptions, hoursMonth: base.hoursMonth }, goal: base.goal, bank: base.bank, expenses: base.expenses };
+  for (const d of [...picks].sort((a, b) => (b.id === 'hours') - (a.id === 'hours'))) x = applyFix(x, d);
+  return x;
+}
+
 export function fixes(s, key = 'real') {
   const now = model(s, key);
   if (now.verdict.tone === 'ok') return [];
@@ -656,7 +677,7 @@ export function fixes(s, key = 'real') {
       title: `להעלות את ${top.short} ל-${fmt(to)}`,
       sub: `במקום ${fmt(top.price)}. מתעדכן גם בסל המוצרים`,
       basket: true,
-      make: (x) => ({ ...freeze(x), products: x.products.map((p) => (p.id === top.id ? { ...p, price: to } : p)) }),
+      d: { id: 'price', pid: top.id, to },
     });
   }
 
@@ -670,12 +691,7 @@ export function fixes(s, key = 'real') {
       icon: 'arrow-left-right',
       title: `${best.short} אחד במקום ${worst.short} אחד`,
       sub: `${best.short} מכניס ${fmt(perHour(s, best))} לשעה, ${worst.short} ${fmt(perHour(s, worst))}`,
-      make: (x) => {
-        const m = { ...mixOf(x) };
-        m[worst.id] -= 1;
-        m[best.id] = (m[best.id] || 0) + 1;
-        return { ...x, mix: m };
-      },
+      d: { id: 'shift', from: worst.id, to: best.id },
     });
   }
 
@@ -687,11 +703,7 @@ export function fixes(s, key = 'real') {
       icon: 'repeat',
       title: `עוד לקוח אחד ב${monthly.short}`,
       sub: `${fmt(netPrice(s, monthly))} כל חודש, ${num(monthly.hours)} שעות בחודש`,
-      make: (x) => {
-        const m = { ...mixOf(x) };
-        m[monthly.id] = (m[monthly.id] || 0) + 1;
-        return { ...x, mix: m };
-      },
+      d: { id: 'monthly', pid: monthly.id },
     });
   }
 
@@ -702,7 +714,7 @@ export function fixes(s, key = 'real') {
       icon: 'clock',
       title: 'עוד 4 שעות בשבוע לעבודה עם לקוחות',
       sub: `${num(s.assumptions.hoursMonth)} שעות בחודש יהיו ${num(s.assumptions.hoursMonth + 16)}. הכריש מחשב מחדש את התמהיל`,
-      make: (x) => ({ ...x, mix: null, assumptions: { ...x.assumptions, hoursMonth: (x.assumptions.hoursMonth || 0) + 16 } }),
+      d: { id: 'hours', add: 16 },
     });
   }
 
@@ -710,7 +722,7 @@ export function fixes(s, key = 'real') {
   // Another goal for the first year: what this mix really leaves.
   if (byId.goal.tone === 'bad') {
     const to = Math.max(1000, Math.floor((now.st.profit - now.st.setAside) / 500) * 500);
-    if (to < (s.goal || 0)) c.push({ id: 'goal', icon: 'target', title: `יעד של ${fmt(to)} בחודש לשנה הראשונה`, sub: `במקום ${fmt(s.goal)}. אפשר להעלות אותו כשהמספרים יגדלו`, make: (x) => ({ ...freeze(x), goal: to }) });
+    if (to < (s.goal || 0)) c.push({ id: 'goal', icon: 'target', title: `יעד של ${fmt(to)} בחודש לשנה הראשונה`, sub: `במקום ${fmt(s.goal)}. אפשר להעלות אותו כשהמספרים יגדלו`, d: { id: 'goal', to } });
   }
 
   // Short on cash for a while: put the missing money in up front, so the business never
@@ -723,7 +735,7 @@ export function fixes(s, key = 'real') {
       icon: 'piggy-bank',
       title: `להכניס לעסק ${fmt(amt)} מראש`,
       sub: `ב${monthName(low.key)} חסרים ${fmt(-low.cash)}. כסף שנכנס עכשיו שומר שהעסק לא נכנס למינוס, עד שהמכירות מגיעות`,
-      make: (x) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + amt } }),
+      d: { id: 'cash-in', amt },
       boost: amt <= 3000 ? 60000 : 0,
     });
   } else if (low && byId.cash.tone === 'warn' && now.fc.cushion > low.cash) {
@@ -737,7 +749,7 @@ export function fixes(s, key = 'real') {
       icon: 'piggy-bank',
       title: `להכניס לעסק ${fmt(amt)} מראש`,
       sub: `ב${monthName(low.key)} נשארים בעסק ${fmt(low.cash)}, מתחת לכרית של ${fmt(now.fc.cushion)}. סכום קטן עכשיו שומר על הכרית כל השנה`,
-      make: (x) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + amt } }),
+      d: { id: 'cash-in', amt },
       boost: amt <= 3000 ? 60000 : 0,
     });
   }
@@ -748,10 +760,11 @@ export function fixes(s, key = 'real') {
     .filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && needOf(x.name) === 3)
     .sort((a, b) => monthlyCost(b) - monthlyCost(a))[0];
   if (cut && monthlyCost(cut) >= 100) {
-    c.push({ id: 'cut', icon: 'scissors', title: `לוותר בינתיים על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש. אפשר להחזיר כשההכנסה מגיעה`, make: (x) => ({ ...freeze(x), expenses: x.expenses.filter((e) => e.id !== cut.id) }) });
+    c.push({ id: 'cut', icon: 'scissors', title: `לוותר בינתיים על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש. אפשר להחזיר כשההכנסה מגיעה`, d: { id: 'cut', xid: cut.id } });
   }
 
   return c
+    .map((fx) => ({ ...fx, d: { ...fx.d, title: fx.title, basket: !!fx.basket }, make: (x) => applyFix(x, fx.d) }))
     .map((fx) => {
       const after = model(fx.make(s), key);
       const gap = (m) => Math.max(0, (s.goal || 0) - m.st.profit);

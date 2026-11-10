@@ -301,6 +301,8 @@ function base(extra) {
     assumptions: clone(DEFAULT_ASSUMPTIONS),
     pace: null, // the user's edits to the scenario equation (calc.PACE_DEFAULT), by scenario
     applied: [],
+    picks: [], // the fixes picked in part 5 (calc.applyFix data)
+    fixBase: null, // the state before them (calc.fixBaseOf), while any is picked
     done: false,
     doneOn: null,
     ...extra,
