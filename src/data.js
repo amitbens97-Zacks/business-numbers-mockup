@@ -210,6 +210,12 @@ const resolve = (x, s) => ({ ...x, amount: forEntity(x.amount, s), note: forEnti
 export const sharkExpensesFor = (s) => ordered(SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => resolve(x, s)));
 export const sharkSetupFor = (s) => ordered(SHARK_SETUP.filter((x) => fits(x, s)).map((x) => resolve(x, s)));
 // A row the user added that has a FlowBiz way (or is the FlowBiz way): what it switches to.
+// The must-haves ("חובה": the law, taxes, the client contract) the user has not added yet.
+// A FlowBiz way of the same thing counts as having it. The extra list is left out: only
+// what the business really needs to move on.
+const hasItem = (list, x) => list.some((y) => y.name === x.name || (x.fb && y.name === x.fb.name));
+export const mustSetupFor = (s) => sharkSetupFor(s).filter((x) => x.need === 1 && !x.extra && !x.flowbiz && !hasItem(s.setup, x));
+export const mustExpensesFor = (s) => sharkExpensesFor(s).filter((x) => x.need === 1 && !x.extra && !x.flowbiz && !hasItem(s.expenses, x));
 export function fbSwitchOf(name, s, list) {
   const all = list === 'setup' ? SHARK_SETUP : SHARK_EXPENSES;
   const base = all.find((x) => x.fb && x.name === name);

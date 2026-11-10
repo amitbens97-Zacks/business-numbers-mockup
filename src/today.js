@@ -4,7 +4,7 @@
 import { html, useState, useRef, useEffect, Icon, PencilCheck, cx } from './lib.js';
 import { Button, StepHeading, InlineEdit, How, CalcLines } from './components.js';
 import { Field, Tag, Sheet, NumEdit, Num } from './ui.js';
-import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, DEMO_REPORT, nextId, g, stageOf, fbSwitchOf, needOf, NEED_LABEL } from './data.js';
+import { TODAY, PARTS, FREQS, sharkExpensesFor, sharkSetupFor, DEMO_REPORT, nextId, g, stageOf, fbSwitchOf, needOf, NEED_LABEL, mustSetupFor, mustExpensesFor } from './data.js';
 import {
   fmt, num, monthName, monthYear, monthlyCost, FORECAST_MONTHS, setupSummary, itemLeft, savedOf, todayAvg, runway,
   fixedMonthly, isLicensed, cushionTarget, addMonth,
@@ -224,14 +224,116 @@ function SetupTable({ s, up }) {
     </div>
     ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל ${s.setup.filter((x) => x.flowbiz).map((x) => x.name).join(' ו')}, ש-FlowBiz בונה: המחיר בשוק (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))}) לא נספר.</p>`}
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
+    <${SetupMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
-      items=${sharkSetupFor(s).filter((x) => !have.has(x.name))}
+      items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !mustSetupFor(s).some((y) => y.name === x.name))}
       label=${(x) => x.shown || fmt(x.planned)}
       onAdd=${(x) => add(x.flowbiz ? { name: x.name, icon: x.icon, flowbiz: true, value: x.value, planned: null, spent: 0 } : { name: x.name, icon: x.icon, planned: x.planned })}
     />
 
   </div>`;
+}
+
+// ---------- what the business must have ----------
+// The shark checks the list for the must-haves that are missing, and makes sure each one
+// fits: in the setup budget (stage 1), or in how long the money lasts (fixed expenses).
+// If it does not fit, it offers to drop something that can wait instead.
+
+const canWaitSetup = (s) => s.setup.filter((x) => !x.flowbiz && !x.done && itemLeft(x) > 0 && needOf(x.name) === 3);
+const canWaitExp = (s) => s.expenses.filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && needOf(x.name) === 3);
+const plainOf = ({ note, stages, extra, fb, shown, pitch, market, need, ...x }) => x;
+
+// Stage 1: does the new item fit the budget? If not, the item that can wait that covers the gap
+// best (the smallest that covers it all, or else the biggest), and what the budget still lacks.
+function setupFit(s, x) {
+  const b = setupSummary(s);
+  const amt = x.planned || 0;
+  const free = b.withBudget && s.setupBudget != null ? s.setupBudget - b.final : Infinity;
+  if (amt <= free) return { ok: true, free: free - amt };
+  const over = amt - Math.max(0, free);
+  const pool = canWaitSetup(s).map((y) => ({ y, save: itemLeft(y) }));
+  const cover = pool.filter((o) => o.save >= over).sort((a, b2) => a.save - b2.save)[0] || pool.sort((a, b2) => b2.save - a.save)[0];
+  return { ok: false, over, drop: cover || null, raise: Math.max(0, over - (cover ? cover.save : 0)) };
+}
+// Fixed expenses: if with the new one the money lasts under 3 months, what can wait instead:
+// the smallest expense that covers the new one, or else the biggest, and only if it changes
+// the picture (at least a week more).
+function expFit(s, x) {
+  const add = (d) => ({ ...d, expenses: [...d.expenses, { id: 'tmp', start: 'now', ...plainOf(x) }] });
+  const before = runway(s);
+  const after = runway(add(s));
+  if (!after || after.months >= 3 || fixedMonthly(s) <= 0) return { ok: true, after };
+  const cost = monthlyCost(plainOf(x));
+  const pool = canWaitExp(s).map((y) => ({ y, save: monthlyCost(y), rw: runway(add({ ...s, expenses: s.expenses.filter((e) => e.id !== y.id) })) }));
+  const best = pool.filter((o) => o.save >= cost).sort((a, b) => a.save - b.save)[0] || pool.sort((a, b) => b.save - a.save)[0];
+  return { ok: false, before, after, drop: best && best.rw.months - after.months >= 0.25 ? best : null };
+}
+
+function MustHave({ items, children }) {
+  if (!items.length) return null;
+  return html`<div class="mt-4 rounded-xl border-[1.5px] border-warn/40 bg-warn-50 p-3">
+    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-alert-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש: חסר משהו שהעסק חייב</p>
+    <ul class="flex flex-col gap-2">${children}</ul>
+  </div>`;
+}
+const mustBtn = 'inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-bold cursor-pointer';
+function MustRow({ x, amount, why, actions }) {
+  return html`<li class="rounded-lg bg-white p-2.5 ring-1 ring-line">
+    <p class="flex items-baseline justify-between gap-2"><b class="text-[15px]">${x.name}</b><b class="shrink-0 tabular-nums">${amount}</b></p>
+    <p class="text-[13px] text-muted">${x.note}</p>
+    <p class="mt-1 text-[13px]">${why}</p>
+    <div class="mt-2 flex flex-wrap gap-2">
+      ${actions.map(([label, icon, onClick, main], i) => html`<button key=${i} type="button" class=${cx(mustBtn, main ? 'bg-brand-600 text-white hover:bg-brand-700' : 'border-[1.5px] border-brand-300 bg-white text-brand-600 hover:bg-brand-50')} onClick=${onClick}><${Icon} name=${icon} size=${14} />${label}</button>`)}
+    </div>
+  </li>`;
+}
+
+function SetupMust({ s, up }) {
+  const list = mustSetupFor(s);
+  const addIt = (d, x) => d.setup.push({ id: nextId('s'), name: x.name, icon: x.icon, planned: x.planned, spent: 0, done: false });
+  return html`<${MustHave} items=${list}>
+    ${list.map((x) => {
+      const fit = setupFit(s, x);
+      if (fit.ok)
+        return html`<${MustRow} key=${x.name} x=${x} amount=${fmt(x.planned)}
+          why=${fit.free !== Infinity ? `נכנס בתקציב: אחרי זה נשארים ${fmt(fit.free)} פנויים.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
+          actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
+      const acts = [];
+      if (fit.drop)
+        acts.push([`להוסיף, ולוותר על ${fit.drop.y.name}${fit.raise > 0 ? ` ולהגדיל ב-${fmt(fit.raise)}` : ''}`, 'arrow-left-right', () => up((d) => {
+          d.setup = d.setup.filter((y) => y.id !== fit.drop.y.id);
+          addIt(d, x);
+          if (fit.raise > 0) { d.setupBudget = (d.setupBudget || 0) + fit.raise; d.budgetSet = true; }
+        }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
+      acts.push([`להוסיף ולהגדיל את התקציב ב-${fmt(fit.over)}`, 'plus', () => up((d) => { addIt(d, x); d.setupBudget = (d.setupBudget || 0) + fit.over; d.budgetSet = true; }, `${x.name} נוסף, התקציב גדל`), !fit.drop]);
+      return html`<${MustRow} key=${x.name} x=${x} amount=${fmt(x.planned)}
+        why=${html`חסרים לזה <b>${fmt(fit.over)}</b> בתקציב.${fit.drop ? html` <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)}) פחות דחוף ויכול לחכות.` : ' אין פריט שאפשר לוותר עליו בינתיים.'}`}
+        actions=${acts} />`;
+    })}
+  <//>`;
+}
+
+function ExpensesMust({ s, up }) {
+  const list = mustExpensesFor(s);
+  const addIt = (d, x) => d.expenses.push({ id: nextId('x'), start: 'now', ...plainOf(x) });
+  return html`<${MustHave} items=${list}>
+    ${list.map((x) => {
+      const fit = expFit(s, x);
+      const amount = `${fmt(x.amount)} ${per(x.freq)}`;
+      if (fit.ok)
+        return html`<${MustRow} key=${x.name} x=${x} amount=${amount}
+          why=${fit.after && fixedMonthly(s) > 0 ? `גם עם זה, בלי הכנסה הכסף מחזיק ${spanOf(fit.after)}.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
+          actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
+      const acts = [];
+      if (fit.drop)
+        acts.push([`להוסיף, ולוותר על ${fit.drop.y.name}`, 'arrow-left-right', () => up((d) => { d.expenses = d.expenses.filter((y) => y.id !== fit.drop.y.id); addIt(d, x); }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
+      acts.push(['רק להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), !fit.drop]);
+      return html`<${MustRow} key=${x.name} x=${x} amount=${amount}
+        why=${html`בלי הכנסה הכסף מחזיק היום ${spanOf(fit.before)}, ועם זה רק <b>${spanOf(fit.after)}</b>.${fit.drop ? html` במקום זה אפשר לוותר בינתיים על <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)} בחודש), ואז ${spanOf(fit.drop.rw)}.` : ' אין הוצאה שיכולה לחכות ושמשנה את התמונה, אז זה נשאר בחוסר. כדאי לבדוק איך מכניסים עוד כסף לעסק.'}`}
+        actions=${acts} />`;
+    })}
+  <//>`;
 }
 
 // ---------- the fixed expenses ----------
@@ -300,9 +402,10 @@ function ExpensesTable({ s, up }) {
       <b class="text-[15px]">סך הכול בחודש</b><${Num} n=${fixedMonthly(s)} class="text-[17px]" />
     </div>
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />הוצאה קבועה</button>
+    <${ExpensesMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
-      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
+      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !mustExpensesFor(s).some((y) => y.name === x.name) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
       label=${(x) => x.shown || `${fmt(x.amount)} ${per(x.freq)}`}
       onAdd=${addSuggestion}
     />
