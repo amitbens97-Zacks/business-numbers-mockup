@@ -70,7 +70,8 @@ export function setupSummary(s) {
   const withBudget = s.stage === 'setup';
   const budget = withBudget ? s.setupBudget || 0 : 0;
   const unallocated = withBudget ? Math.max(0, budget - allocated - over) : 0;
-  const remaining = itemsLeft + unallocated;
+  // Left to pay = what the items still need (Amit, 10.11): budget not yet in an item is free money.
+  const remaining = itemsLeft;
   const final = spent + remaining;
   return { items, budget, withBudget, allocated, spent, over, overItems, unallocated, remaining, final, overBudget: withBudget && s.setupBudget != null ? Math.max(0, final - budget) : 0 };
 }

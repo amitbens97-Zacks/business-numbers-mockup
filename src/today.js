@@ -220,7 +220,7 @@ function SetupTable({ s, up }) {
       <b class="col-span-4 text-[15px] md:col-span-1">סך הכול בפריטים</b>
       ${cell('תכננת', total(b.allocated))}
       ${cell('שולם', total(b.spent))}
-      ${cell('נשאר לשלם', total(b.remaining - b.unallocated))}
+      ${cell('נשאר לשלם', total(b.remaining))}
     </div>
     ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל ${s.setup.filter((x) => x.flowbiz).map((x) => x.name).join(' ו')}, ש-FlowBiz בונה: המחיר בשוק (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))}) לא נספר.</p>`}
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
