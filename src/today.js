@@ -223,16 +223,6 @@ function SetupTable({ s, up }) {
       ${cell('נשאר לשלם', total(b.remaining - b.unallocated))}
     </div>
     ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל ${s.setup.filter((x) => x.flowbiz).map((x) => x.name).join(' ו')}, ש-FlowBiz בונה: המחיר בשוק (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))}) לא נספר.</p>`}
-    ${b.unallocated > 0 &&
-    html`<div class="mt-3 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3 text-[14px]">
-      <p class="font-bold">עוד ${fmt(b.unallocated)} מהתקציב לא שייכים לשום פריט</p>
-      <p class="text-muted">התקציב ${fmt(b.budget)}, ובפריטים ${fmt(b.allocated)}. ההפרש שמור להקמה: בחישוב של כמה זמן הכסף מחזיק הוא נחשב כאילו כבר הוצא.</p>
-      <div class="mt-2 flex flex-wrap gap-2">
-        <button type="button" onClick=${() => add({ planned: b.unallocated })} class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${13} />לשייך לפריט חדש</button>
-        <button type="button" onClick=${() => up((d) => ((d.setupBudget = b.allocated + b.over), (d.budgetSet = true)), `התקציב ירד ל-${fmt(b.allocated + b.over)}`)} class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="arrow-down" size=${13} />להוריד את התקציב ל-${fmt(b.allocated + b.over)}</button>
-      </div>
-      <p class="mt-1.5 text-[12px] text-muted">מורידים את התקציב? ההפרש חוזר להיות כסף פנוי לחודשים הבאים.</p>
-    </div>`}
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
