@@ -68,12 +68,13 @@ export const ENTITIES = [
   { id: 'licensed', label: 'עוסק מורשה' },
 ];
 
-// When the money of a program reaches the business. Card installments are between the
-// client and the card company; what counts here is when the money reaches the business.
+// When the money of a sale reaches the business, for every product. The default follows
+// the kind: a single sale at once, a program and a subscription each month.
 export const PAY = [
   { id: 'start', label: 'הכל בהתחלה' },
-  { id: 'monthly', label: 'כל חודש, לאורך התוכנית' },
+  { id: 'monthly', label: 'כל חודש' },
 ];
+export const payOf = (p) => p.pay ?? (p.kind === 'one' ? 'start' : 'monthly');
 
 export const CATEGORIES = {
   marketing: { label: 'שיווק', icon: 'megaphone' },
@@ -92,17 +93,27 @@ export const FREQS = [
 
 // The shark's suggestions for a marketing consultant. In production the model writes them
 // from the business type, the stage and the entity, with market prices it checks, and
-// "עוד הצעות" asks it for more, with no limit. Prices include VAT; checked November 2026.
-// All the fitting suggestions show; `extra` ones show after "עוד הצעות" (the mockup's
-// stand-in for the model writing more). What FlowBiz gives is one suggestion among the
-// rest, with its real price and what it includes, in the same look: never a sales pitch.
-//   stages: where the suggestion fits (default: all); amount and note may depend on the entity.
-export const FLOWBIZ_PRICE = 350;
+// "עוד הצעות" asks it for more, every time, with no limit. Prices include VAT unless they
+// say "+ מע"מ"; checked November 2026. The fitting suggestions show; `extra` ones come 4 at
+// a time with each "עוד הצעות" (the mockup's stand-in for the model writing more).
+// What FlowBiz offers is a suggestion like the rest, in the same look: never a sales pitch.
+//   stages: where it fits (default: all); amount and note may depend on the entity;
+//   fb: the FlowBiz way to get the same thing, behind a small "לחסוך עם FlowBiz" button;
+//   shown: the price as written on the card, when it is "+ מע"מ".
+const withVat = (n) => Math.round(n * (1 + SETTINGS.vatPct / 100));
+const plusVat = (n, per = '') => `${n.toLocaleString('he-IL')} ₪ + מע"מ${per}`;
+export const FLOWBIZ_PRICE = 350; // + VAT, a month
+export const FLOWBIZ_ACCOUNTANT = 150; // + VAT, a month, only with the system: 500 + VAT together
+export const FLOWBIZ_FILE_OPENING = 249; // + VAT, once
 const FLOWBIZ_NOTE = 'המנוי שלך. כולל דף נחיתה, תוכן לרשתות, בוט וואטסאפ, ניהול לידים ויומן';
+const BUNDLE_NOTE = `המנוי והנהלת החשבונות: רואה חשבון ב-${FLOWBIZ_ACCOUNTANT} ₪ + מע"מ בחודש, בתוך החבילה`;
+const BUNDLE = { name: 'FlowBiz עם רואה חשבון', category: 'flowbiz', freq: 'monthly', day: 1, amount: withVat(FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT), shown: plusVat(FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT, ' בחודש'), flowbiz: 'bundle', note: BUNDLE_NOTE };
 export const SHARK_EXPENSES = [
-  { name: 'FlowBiz', category: 'flowbiz', freq: 'monthly', day: 1, amount: FLOWBIZ_PRICE, flowbiz: true, note: FLOWBIZ_NOTE },
+  { name: 'FlowBiz', category: 'flowbiz', freq: 'monthly', day: 1, amount: withVat(FLOWBIZ_PRICE), shown: plusVat(FLOWBIZ_PRICE, ' בחודש'), flowbiz: 'system', note: FLOWBIZ_NOTE },
+  BUNDLE,
   { name: 'הנהלת חשבונות', category: 'pro', freq: 'monthly', day: 10, amount: { exempt: 250, licensed: 550 },
-    note: { exempt: 'ליווי שוטף לעוסק פטור, בלי הדוח השנתי', licensed: 'עוסק מורשה: כולל דיווחי מע"מ ומקדמות' } },
+    note: { exempt: 'ליווי שוטף לעוסק פטור, בלי הדוח השנתי', licensed: 'עוסק מורשה: כולל דיווחי מע"מ ומקדמות' },
+    fb: { ...BUNDLE, pitch: `רואה חשבון ב-${FLOWBIZ_ACCOUNTANT} ₪ + מע"מ בחודש, בחבילה עם המערכת: ${FLOWBIZ_PRICE + FLOWBIZ_ACCOUNTANT} ₪ + מע"מ בחודש ביחד.`, market: { exempt: 'במחיר שוק: כ-250 ₪ בחודש, בלי המערכת', licensed: 'במחיר שוק: כ-550 ₪ בחודש, בלי המערכת' } } },
   { name: 'ביטוח לאומי (מינימום)', category: 'gov', freq: 'monthly', day: 15, amount: 265, note: 'המינימום לעצמאי ב-2026, גם בחודש בלי הכנסה' },
   { name: 'דוח שנתי לרואה חשבון', category: 'pro', freq: 'yearly', day: 1, amount: 1500, note: 'בדרך כלל 1,100-2,000 ₪' },
   { name: 'Zoom Pro', category: 'tools', freq: 'monthly', day: 1, amount: 57, note: 'רישיון אחד, תשלום חודשי' },
@@ -114,11 +125,25 @@ export const SHARK_EXPENSES = [
   { name: 'Canva Pro', category: 'tools', freq: 'monthly', day: 1, amount: 55, note: 'משתמש אחד, תשלום חודשי' },
   { name: 'קו סלולר לעסק', category: 'tools', freq: 'monthly', day: 1, amount: 40, note: 'קו נפרד ללקוחות' },
   { name: 'השתלמות מקצועית', category: 'pro', freq: 'yearly', day: 1, amount: 2400, stages: ['first', 'active'], note: 'קורס או כנס אחד בשנה' },
-  { name: 'עמלות חשבון בנק עסקי', category: 'other', freq: 'monthly', day: 1, amount: 30, extra: true, note: 'עמלות בסיסיות בחודש' },
-  { name: 'נסיעות לפגישות', category: 'other', freq: 'monthly', day: 1, amount: 250, extra: true, note: 'הערכה, לפי מספר הפגישות פנים מול פנים' },
-  { name: 'LinkedIn Premium', category: 'marketing', freq: 'monthly', day: 1, amount: 120, extra: true, note: 'Premium Career, משתמש אחד' },
-  { name: 'Notion Plus', category: 'tools', freq: 'monthly', day: 1, amount: 45, extra: true, note: 'תכנון ומשימות, משתמש אחד' },
-  { name: 'ביטוח ציוד', category: 'insurance', freq: 'yearly', day: 1, amount: 300, extra: true, note: 'מחשב וציוד צילום' },
+  ...[
+    ['עמלות חשבון בנק עסקי', 'other', 'monthly', 30, 'עמלות בסיסיות בחודש'],
+    ['נסיעות לפגישות', 'other', 'monthly', 250, 'הערכה, לפי מספר הפגישות פנים מול פנים'],
+    ['LinkedIn Premium', 'marketing', 'monthly', 120, 'Premium Career, משתמש אחד'],
+    ['Notion Plus', 'tools', 'monthly', 45, 'תכנון ומשימות, משתמש אחד'],
+    ['ביטוח ציוד', 'insurance', 'yearly', 300, 'מחשב וציוד צילום'],
+    ['Dropbox Plus', 'tools', 'monthly', 45, '2TB לקבצים של לקוחות'],
+    ['CapCut Pro', 'tools', 'monthly', 40, 'עריכת סרטונים קצרים'],
+    ['אינטרנט (החלק של העסק)', 'other', 'monthly', 60, 'חלק מחשבון הבית'],
+    ['קפה ואירוח לקוחות', 'other', 'monthly', 150, 'פגישות בבית קפה'],
+    ['חלל עבודה משותף', 'other', 'monthly', 900, 'שולחן גמיש, כמה ימים בשבוע'],
+    ['ספרים וקורסים דיגיטליים', 'pro', 'monthly', 100, 'ממוצע בחודש'],
+    ['נטוורקינג ומפגשים מקצועיים', 'marketing', 'monthly', 150, 'כרטיסים לאירועים'],
+    ['סופרוויז\'ן או מנטור', 'pro', 'monthly', 400, 'פגישה אחת בחודש'],
+    ['מתנות ללקוחות', 'marketing', 'yearly', 600, 'לחגים, ללקוחות פעילים'],
+    ['תחזוקת מחשב', 'other', 'yearly', 400, 'תיקונים וחלקים'],
+    ['חברות באיגוד מקצועי', 'pro', 'yearly', 600, 'דמי חבר לשנה'],
+    ['כרטיס אשראי עסקי', 'other', 'monthly', 20, 'דמי כרטיס'],
+  ].map(([name, category, freq, amount, note]) => ({ name, category, freq, day: 1, amount, note, extra: true })),
 ];
 
 // One-time setup. What FlowBiz builds with the user (the name and logo, the messages page,
@@ -135,7 +160,8 @@ const fbSetup = (id) => {
   return { name: x.name, icon: x.icon, planned: 0, flowbiz: true, value: x.value, note: `נבנה ב-FlowBiz, בשלב ${x.step}. אצל פרילנסר: כ-${x.value.toLocaleString('he-IL')} ₪` };
 };
 export const SHARK_SETUP = [
-  { name: 'פתיחת תיק אצל רואה חשבון', icon: 'file-text', planned: 400, stages: ['setup'], note: 'הפתיחה במע"מ ובמס הכנסה בחינם. יש רו"ח שלא גובים על זה' },
+  { name: 'פתיחת תיק אצל רואה חשבון', icon: 'file-text', planned: 450, stages: ['setup'], note: 'פתיחה במע"מ ובמס הכנסה ושכר רו"ח. בשוק: 350-600 ₪',
+    fb: { name: 'פתיחת תיק דרך FlowBiz', icon: 'file-text', planned: withVat(FLOWBIZ_FILE_OPENING), shown: plusVat(FLOWBIZ_FILE_OPENING), pitch: `פתיחת תיק חד-פעמית ב-${FLOWBIZ_FILE_OPENING} ₪ + מע"מ, עם רואה החשבון של FlowBiz.`, market: 'במחיר שוק: 350-600 ₪' } },
   fbSetup('fb-logo'),
   { name: 'חוזה לקוח מעורך דין', icon: 'scale', planned: 800, note: 'התאמה של חוזה ליווי קיים, 500-1,200 ₪' },
   fbSetup('fb-lp'),
@@ -146,19 +172,29 @@ export const SHARK_SETUP = [
   { name: 'מיקרופון', icon: 'mic', planned: 250, note: 'מיקרופון USB לשיחות והקלטות' },
   { name: 'מחשב נייד', icon: 'laptop', planned: 3000, note: 'רק אם צריך חדש. דגם בסיסי מספיק לעבודה ולזום' },
   { name: 'עמדת עבודה (שולחן וכיסא)', icon: 'armchair', planned: 800, note: 'כיסא משרדי ושולחן פשוט' },
-  { name: 'כרטיסי ביקור', icon: 'id-card', planned: 150, extra: true, note: '250 כרטיסים, הדפסה דיגיטלית' },
-  { name: 'אוזניות עם מיקרופון', icon: 'headphones', planned: 250, extra: true, note: 'לשיחות ארוכות' },
-  { name: 'מסך נוסף', icon: 'monitor', planned: 600, extra: true, note: 'מסך 24 אינץ\'' },
-  { name: 'שם מתחם (דומיין)', icon: 'globe', planned: 70, extra: true, note: 'כתובת co.il לשנה הראשונה' },
+  ...[
+    ['כרטיסי ביקור', 'id-card', 150, '250 כרטיסים, הדפסה דיגיטלית'],
+    ['אוזניות עם מיקרופון', 'headphones', 250, 'לשיחות ארוכות'],
+    ['מסך נוסף', 'monitor', 600, 'מסך 24 אינץ\''],
+    ['שם מתחם (דומיין)', 'globe', 70, 'כתובת co.il לשנה הראשונה'],
+    ['סרטון היכרות קצר', 'video', 1200, 'צילום ועריכה של דקה, לדף הנחיתה'],
+    ['תאורה לצילום סרטונים', 'lamp', 300, 'שתי מנורות עם מעמד'],
+    ['רול-אפ לכנסים', 'flag', 250, 'הדפסה ומעמד'],
+    ['מעמד למחשב ומקלדת', 'keyboard', 200, 'לעבודה ארוכה ליד המחשב'],
+    ['קורס הכשרה לפני הפתיחה', 'graduation-cap', 1500, 'קורס דיגיטלי או סדנה'],
+    ['טלפון לעסק', 'smartphone', 1500, 'רק אם צריך מכשיר נפרד'],
+    ['מדפסת', 'printer', 500, 'רק אם מדפיסים חוזים וחומרים'],
+    ['חותמת עסק', 'stamp', 80, 'לחוזים ולקבלות'],
+  ].map(([name, icon, planned, note]) => ({ name, icon, planned, note, extra: true })),
 ];
 // The suggestions that fit this user, with the amount and the note for their entity.
 const forEntity = (v, s) => (v != null && typeof v === 'object' ? v[s.entity] ?? v.exempt : v);
 const fits = (x, s) => !x.stages || x.stages.includes(s.stage);
-export const sharkExpensesFor = (s) =>
-  SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => ({ ...x, amount: forEntity(x.amount, s), note: forEntity(x.note, s), start: x.start === 'next' ? FIRST_MONTH : 'now' }));
-export const sharkSetupFor = (s) => SHARK_SETUP.filter((x) => fits(x, s));
+const resolve = (x, s) => ({ ...x, amount: forEntity(x.amount, s), note: forEntity(x.note, s), start: x.start === 'next' ? FIRST_MONTH : 'now', fb: x.fb && { ...x.fb, market: forEntity(x.fb.market, s) } });
+export const sharkExpensesFor = (s) => SHARK_EXPENSES.filter((x) => fits(x, s)).map((x) => resolve(x, s));
+export const sharkSetupFor = (s) => SHARK_SETUP.filter((x) => fits(x, s)).map((x) => resolve(x, s));
 // The FlowBiz row once the user added it (demo data uses the same).
-export const flowbizExpense = () => ({ id: 'x-flowbiz', name: 'FlowBiz', amount: FLOWBIZ_PRICE, category: 'flowbiz', freq: 'monthly', day: 1, start: 'now', flowbiz: true, sub: FLOWBIZ_NOTE });
+export const flowbizExpense = () => ({ id: 'x-flowbiz', name: 'FlowBiz', amount: withVat(FLOWBIZ_PRICE), category: 'flowbiz', freq: 'monthly', day: 1, start: 'now', flowbiz: 'system', sub: FLOWBIZ_NOTE });
 
 // The basket (סל מוצרים, v5 consultant pack). Prices include VAT.
 //   pay (a program only): start = all at the start, monthly = price / months each month
@@ -180,9 +216,9 @@ export const FROM_STEP2 = { goal: 12000, hoursWeek: 20 };
 // Our assumptions, all in one place and all editable in the step.
 export const DEFAULT_ASSUMPTIONS = {
   leadToCall: 40, // % of leads that book a call
-  closeRate: 25, // % of calls that buy
+  closeRate: 20, // % of calls that buy
   hoursMonth: 80, // hours a month for client work (from step 2: hours a week x 4)
-  stayMonths: 6, // a monthly client stays this long on average
+  stayMonths: 3, // a monthly client stays this long on average
 };
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -210,7 +246,8 @@ function base(extra) {
   return {
     stage: null,
     bank: { has: null, amount: null },
-    setupBudget: null,
+    setupBudget: null, // stage 1: starts as the money in the business today, until the user sets it
+    budgetSet: false,
     setup: [],
     expenses: [],
     history: clone(EMPTY_HISTORY),
@@ -228,7 +265,7 @@ function base(extra) {
     annualGoal: null, // stage 3; null = 12 x the monthly goal
     mix: null, // null = the shark's suggestion
     assumptions: clone(DEFAULT_ASSUMPTIONS),
-    ramp: 6,
+    ramp: null, // months to the full month; null = the shark's, from the pace (calc.rampPlan)
     applied: [],
     done: false,
     doneOn: null,
@@ -251,6 +288,7 @@ export const SCENARIOS = [
     demo: (s) => {
       s.bank = { has: true, amount: 10000 };
       s.setupBudget = 5000;
+      s.budgetSet = true;
       s.setup = clone(SETUP_ITEMS);
       s.expenses = [...expenses(), exp(ADS, 200, 'marketing', 'weekly', 0, '2027-01')];
     },

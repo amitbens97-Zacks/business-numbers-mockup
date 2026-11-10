@@ -3,7 +3,7 @@
 import { html, useState, useRef, Icon, cx, parseNum } from './lib.js';
 import { Button, Note, StepHeading } from './components.js';
 import { Chips, Field, inputCls, Tag } from './ui.js';
-import { STAGES, PARTS, PAY, SETTINGS, nextId, g } from './data.js';
+import { STAGES, PARTS, PAY, SETTINGS, nextId, g, payOf } from './data.js';
 import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed } from './calc.js';
 
 // ---------- small shared inputs ----------
@@ -132,23 +132,28 @@ const KIND = { one: 'מכירה אחת', program: (p) => `תוכנית של ${p.
 const kindText = (p) => (typeof KIND[p.kind] === 'function' ? KIND[p.kind](p) : KIND[p.kind]);
 
 // When the money of one sale reaches the business, in words (updates with the answer).
-export function cashText(p) {
+export function cashText(p, stay = 3) {
   if (p.price == null) return '';
-  if (p.kind === 'monthly') return `${fmt(p.price)} בכל חודש, כל עוד הלקוח נשאר`;
-  if (p.kind === 'program' && p.pay === 'monthly') return `${fmt(p.price / (p.months || 1))} בכל חודש, ${p.months} חודשים`;
+  const pay = payOf(p);
+  if (p.kind === 'monthly')
+    return pay === 'start' ? `${fmt(p.price * stay)} מראש, על ${stay} חודשים (כמה שלקוח נשאר בממוצע)` : `${fmt(p.price)} בכל חודש, כל עוד הלקוח נשאר`;
+  if (pay === 'monthly') {
+    const n = p.kind === 'program' ? p.months || 1 : p.payMonths || 3;
+    return `${fmt(p.price / n)} בכל חודש, ${n} חודשים`;
+  }
   return `${fmt(p.price)} בבת אחת, בחודש של המכירה`;
 }
 
-// The payment question. Card installments are between the client and the card company,
-// so the question is only when the money reaches the business.
-function PayQuestion({ p, set }) {
+// When the money reaches the business: all at the start, or each month. The default
+// follows the kind of product (payOf), and the user can change it for every product.
+function PayQuestion({ p, set, stay }) {
+  const pay = payOf(p);
   return html`<div>
     <p class="mb-1 text-[13px] font-bold">מתי הכסף נכנס לעסק?</p>
-    ${p.kind === 'program'
-      ? html`<${Chips} small options=${PAY} value=${p.pay || 'start'} onChange=${(v) => set((x) => (x.pay = v))} />`
-      : html`<${Tag} tone="blue"><${Icon} name=${p.kind === 'monthly' ? 'repeat' : 'banknote'} size=${13} />${p.kind === 'monthly' ? 'כל חודש, מנוי' : 'בבת אחת'}<//>`}
-    <p class="mt-1.5 text-[13px] font-semibold text-brand-600">${cashText(p)}</p>
-    <p class="mt-0.5 text-[12px] text-muted">${p.kind === 'program' ? 'תשלומים בכרטיס אשראי לא נחשבים כאן: הם עניין של הלקוח. כאן בוחרים אם הלקוח משלם על כל התוכנית מראש, או בכל חודש שהיא נמשכת.' : 'תשלומים בכרטיס אשראי הם עניין של הלקוח, ולא משנים את החישוב.'}</p>
+    <${Chips} small options=${PAY} value=${pay} onChange=${(v) => set((x) => (x.pay = v))} />
+    ${p.kind === 'one' && pay === 'monthly' &&
+    html`<div class="rise mt-2 flex items-center gap-2 text-[13px]"><span class="font-bold">על כמה חודשים?</span><${Stepper} label="על כמה חודשים" min=${2} value=${p.payMonths || 3} onChange=${(v) => set((x) => (x.payMonths = v))} /></div>`}
+    <p class="mt-1.5 text-[13px] font-semibold text-brand-600">${cashText(p, stay)}</p>
   </div>`;
 }
 
@@ -185,31 +190,31 @@ function ProductCard({ s, p, set, onBasket }) {
         <b class="ms-1 font-display text-[20px] tabular-nums text-brand-600">${ph != null && !miss.length ? fmt(ph) : '—'}</b>
         ${isLicensed(s) && p.price ? html`<span class="block text-[12px] text-muted">מתוך ${fmt(p.price)} נשארים לך ${fmt(netPrice(s, p))}, השאר מע"מ</span>` : ''}
       </p>
-      <${PayQuestion} p=${p} set=${set} />
+      <${PayQuestion} p=${p} set=${set} stay=${s.assumptions.stayMonths || 3} />
     </div>
   </article>`;
 }
 
 function NewProduct({ onAdd, onCancel, first }) {
-  const [d, setD] = useState({ name: '', price: null, cost: 0, hours: null, kind: 'one', months: 3, pay: 'start' });
+  const [d, setD] = useState({ name: '', price: null, cost: 0, hours: null, kind: 'one', months: 3, pay: null });
   const ok = d.name.trim() && d.price > 0 && d.hours > 0 && d.cost != null;
   return html`<article class="fb-panel rise !p-4 md:!p-5">
     <h3 class="fb-h3 mb-3">${first ? 'המוצר הראשון שלך' : 'מוצר חדש לסל'}</h3>
     <${Field} label="מה מוכרים?"><input class=${inputCls} placeholder="למשל: פגישת ייעוץ" value=${d.name} onInput=${(e) => setD({ ...d, name: e.target.value })} /><//>
     <p class="mb-1 text-[14px] font-bold">איך זה נמכר?</p>
-    <div class="mb-4"><${Chips} small options=${[{ id: 'one', label: 'מכירה אחת' }, { id: 'program', label: 'תוכנית של כמה חודשים' }, { id: 'monthly', label: 'מנוי חודשי' }]} value=${d.kind} onChange=${(v) => setD({ ...d, kind: v })} /></div>
+    <div class="mb-4"><${Chips} small options=${[{ id: 'one', label: 'מכירה אחת' }, { id: 'program', label: 'תוכנית של כמה חודשים' }, { id: 'monthly', label: 'מנוי חודשי' }]} value=${d.kind} onChange=${(v) => setD({ ...d, kind: v, pay: null })} /></div>
     ${d.kind === 'program' &&
     html`<div class="rise mb-4 flex flex-wrap items-end gap-5">
       <div><p class="mb-1 text-[14px] font-bold">כמה חודשים?</p><${Stepper} label="כמה חודשים" min=${2} value=${d.months} onChange=${(v) => setD({ ...d, months: v })} /></div>
-      <div><p class="mb-1 text-[14px] font-bold">מתי הכסף נכנס לעסק?</p><${Chips} small options=${PAY} value=${d.pay} onChange=${(v) => setD({ ...d, pay: v })} /></div>
     </div>`}
+    <div class="mb-4"><p class="mb-1 text-[14px] font-bold">מתי הכסף נכנס לעסק?</p><${Chips} small options=${PAY} value=${payOf(d)} onChange=${(v) => setD({ ...d, pay: v })} /></div>
     <div class="grid gap-3 sm:grid-cols-3">
       <${Field} class="!mb-0" label="מחיר" hint="כולל מע״מ"><${Money} label="מחיר" value=${d.price} onChange=${(v) => setD({ ...d, price: v })} /><//>
       <${Field} class="!mb-0" label="עלות למכירה"><${Money} label="עלות" value=${d.cost} onChange=${(v) => setD({ ...d, cost: v })} /><//>
       <${Field} class="!mb-0" label="שעות עבודה"><${Money} suffix="שעות" label="שעות" value=${d.hours} onChange=${(v) => setD({ ...d, hours: v })} /><//>
     </div>
     <div class="mt-4 flex items-center gap-2">
-      <${Button} variant="mini" disabled=${!ok} onClick=${() => ok && onAdd({ ...d, id: nextId('p'), short: d.name.trim().split(' ').slice(0, 2).join(' '), role: first ? 'core' : 'extra', months: d.kind === 'program' ? d.months : undefined, pay: d.kind === 'program' ? d.pay : undefined })}><${Icon} name="plus" size=${15} />להכניס לסל<//>
+      <${Button} variant="mini" disabled=${!ok} onClick=${() => ok && onAdd({ ...d, id: nextId('p'), short: d.name.trim().split(' ').slice(0, 2).join(' '), role: first ? 'core' : 'extra', months: d.kind === 'program' ? d.months : undefined, pay: payOf(d) })}><${Icon} name="plus" size=${15} />להכניס לסל<//>
       ${onCancel && html`<${Button} variant="text" onClick=${onCancel}>ביטול<//>`}
     </div>
   </article>`;

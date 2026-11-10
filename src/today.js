@@ -15,32 +15,53 @@ const cell = (label, node, cls = '') => html`<div class=${cx('min-w-0', cls)}><s
 // "חסכת עם FlowBiz": a plain note in the row, in the same look as the rest of the table.
 const Saved = () => html`<span class="text-[14px] font-bold text-muted">חסכת עם FlowBiz</span>`;
 
-// The shark's suggestions: every one that fits shows. "עוד הצעות" shows more (in production
-// the model writes more on each click, with no limit).
+// The shark's suggestions: every one that fits shows, and "עוד הצעות" brings 4 more on each
+// click (in production the model writes new ones every time: no limit). A suggestion with a
+// FlowBiz way to get it has a small "לחסוך עם FlowBiz" button that opens it, with the
+// market price beside it, in the same plain look.
+const BATCH = 4;
+function SharkCard({ x, label, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const fb = x.fb;
+  return html`<div class="flex flex-col rounded-xl border-[1.5px] border-brand-300 bg-white">
+    <button type="button" class="flex min-h-[56px] flex-1 items-start gap-2 rounded-xl px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
+      <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
+      <span class="min-w-0 flex-1">
+        <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
+        ${x.note && html`<small class="block text-[12px] leading-snug text-muted">${x.note}</small>`}
+      </span>
+    </button>
+    ${fb &&
+    html`<div class="border-t border-line px-3 pb-2 pt-1.5">
+      ${!open
+        ? html`<button type="button" class="inline-flex h-7 items-center gap-1 rounded-md px-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" aria-expanded="false" onClick=${() => setOpen(true)}><${Icon} name="piggy-bank" size=${13} />לחסוך עם FlowBiz</button>`
+        : html`<div class="rise text-[13px]">
+            <p class="font-bold text-ink">${fb.name} · <span class="tabular-nums">${fb.shown}</span></p>
+            <p class="text-muted">${fb.pitch}</p>
+            <p class="text-muted">${fb.market}</p>
+            <div class="mt-1 flex items-center gap-3">
+              <button type="button" class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(fb, x)}><${Icon} name="plus" size=${13} />להוסיף במקום</button>
+              <button type="button" class="text-[12px] font-bold text-muted hover:underline cursor-pointer" onClick=${() => setOpen(false)}>לסגור</button>
+            </div>
+          </div>`}
+    </div>`}
+  </div>`;
+}
 function SharkChips({ title, items, onAdd, label }) {
-  const [extra, setExtra] = useState(false);
-  const list = extra ? items : items.filter((x) => !x.extra);
-  const hidden = items.length - list.length;
+  const [more, setMore] = useState(0);
+  const base = items.filter((x) => !x.extra);
+  const extra = items.filter((x) => x.extra);
+  const list = [...base, ...extra.slice(0, more)];
+  const left = extra.length - Math.min(more, extra.length);
   if (!items.length) return null;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
     <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
-    <p class="mb-2 text-[12px] text-muted">מחירי שוק כולל מע"מ, נובמבר 2026. אחרי שמוסיפים אפשר לשנות כל סכום.</p>
-    ${list.length > 0 &&
-    html`<div class="grid gap-2 sm:grid-cols-2">
-      ${list.map(
-        (x) => html`<button key=${x.name} type="button" class="flex min-h-[56px] items-start gap-2 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
-          <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
-          <span class="min-w-0 flex-1">
-            <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
-            ${x.note && html`<small class="block text-[12px] leading-snug text-muted">${x.note}</small>`}
-          </span>
-        </button>`,
-      )}
-    </div>`}
-    ${hidden > 0 &&
-    html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setExtra(true)}>
+    <p class="mb-2 text-[12px] text-muted">מחירי שוק כולל מע"מ, נובמבר 2026, אלא אם כתוב "+ מע"מ". אחרי שמוסיפים אפשר לשנות כל סכום.</p>
+    ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} />`)}</div>`}
+    <button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setMore(more + BATCH)}>
       <${Icon} name="plus" size=${15} />עוד הצעות
-    </button>`}
+    </button>
+    ${left <= 0 && more > 0 && html`<p class="text-[13px] text-muted">הכריש עבר על כל מה שמתאים לעסק כמו שלך. אם חסר משהו, אפשר להוסיף שורה משלך.</p>`}
   </div>`;
 }
 
@@ -98,12 +119,14 @@ function SavedRow({ x, remove }) {
 function BudgetSlider({ s, b, setBudget }) {
   const [draft, setDraft] = useState(null);
   const v = draft ?? s.setupBudget ?? 0;
-  const max = Math.max(20000, Math.ceil((b.allocated * 2) / 5000) * 5000);
+  const max = Math.max(20000, Math.ceil((b.allocated * 2) / 5000) * 5000, Math.ceil((s.bank.amount || 0) / 5000) * 5000);
   const free = v - b.allocated - b.over;
   const status =
     s.setupBudget == null && draft == null
       ? `כמה כסף ${g('אתה שם', 'את שמה')} בצד להקמת העסק? אפשר לגרור, או ללחוץ על המספר ולכתוב.`
-      : b.allocated > v
+      : !s.budgetSet && draft == null && s.bank.amount != null && s.setupBudget === s.bank.amount
+        ? `התחלנו מכל הכסף שיש לעסק היום (${fmt(s.bank.amount)}). אפשר להוריד: מה שלא בתקציב נשאר פנוי לחודשים הבאים.`
+        : b.allocated > v
         ? html`<span class="text-error">הפריטים עוברים את התקציב ב-${fmt(b.allocated - v)}.</span>`
         : free > 0
           ? `חולקו לפריטים ${fmt(b.allocated)}. עוד ${fmt(free)} לא חולקו, ונספרים ב"נשאר לשלם".`
@@ -151,7 +174,7 @@ function SetupTable({ s, up }) {
   const have = new Set(s.setup.map((x) => x.name));
   const total = (n) => html`<${Num} n=${n} class="text-[15px] md:text-[17px]" />`;
   return html`<div>
-    ${withBudget && html`<${BudgetSlider} s=${s} b=${b} setBudget=${(v) => up((d) => (d.setupBudget = v))} />`}
+    ${withBudget && html`<${BudgetSlider} s=${s} b=${b} setBudget=${(v) => up((d) => ((d.setupBudget = v), (d.budgetSet = true)))} />`}
     ${b.overBudget > 0 &&
     html`<div role="status" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-error-50 px-3.5 py-2.5">
       <p class="flex min-w-0 grow basis-[260px] items-start gap-2 text-[14px] text-ink"><${Icon} name="triangle-alert" size=${17} class="mt-0.5 shrink-0 text-error" /><b class="text-error">${fmt(b.overBudget)} מעל התקציב</b></p>
@@ -207,7 +230,7 @@ function SetupTable({ s, up }) {
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
       items=${sharkSetupFor(s).filter((x) => !have.has(x.name))}
-      label=${(x) => fmt(x.planned)}
+      label=${(x) => x.shown || fmt(x.planned)}
       onAdd=${(x) => add(x.flowbiz ? { name: x.name, icon: x.icon, flowbiz: true, value: x.value, planned: null, spent: 0 } : { name: x.name, icon: x.icon, planned: x.planned })}
     />
 
@@ -248,6 +271,14 @@ function ExpenseRow({ x, set, remove }) {
 
 function ExpensesTable({ s, up }) {
   const have = new Set(s.expenses.map((x) => x.name));
+  const hasFb = s.expenses.some((x) => x.flowbiz);
+  const hasBundle = s.expenses.some((x) => x.flowbiz === 'bundle');
+  // A FlowBiz row replaces the FlowBiz row already there (the bundle includes the system).
+  const addSuggestion = ({ note, stages, extra, fb, shown, pitch, market, ...x }) =>
+    up((d) => {
+      if (x.flowbiz) d.expenses = d.expenses.filter((y) => !y.flowbiz);
+      d.expenses.push({ id: nextId('x'), start: 'now', ...x, sub: x.flowbiz ? note : undefined });
+    }, `${x.name} נוסף`);
   const set = (id) => (patch) => up((d) => Object.assign(d.expenses.find((y) => y.id === id), patch));
   const add = (x) => up((d) => d.expenses.push({ id: nextId('x'), name: '', amount: null, category: 'other', freq: 'monthly', day: 1, start: 'now', ...x }), x?.name ? `${x.name} נוסף` : undefined);
   return html`<div>
@@ -264,9 +295,9 @@ function ExpensesTable({ s, up }) {
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />הוצאה קבועה</button>
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
-      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name))}
-      label=${(x) => `${fmt(x.amount)} ${per(x.freq)}`}
-      onAdd=${({ note, stages, extra, ...x }) => add(x.flowbiz ? { ...x, sub: note } : x)}
+      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
+      label=${(x) => x.shown || `${fmt(x.amount)} ${per(x.freq)}`}
+      onAdd=${addSuggestion}
     />
 
   </div>`;
@@ -283,7 +314,10 @@ function MoneyNow({ s, up }) {
     </div>
     ${has != null &&
     html`<${Field} class="!mb-0 rise" label=${has ? 'כמה יש היום בחשבון הבנק של העסק?' : 'כמה כסף יש היום לעסק?'} hint=${has ? 'היתרה כמו שהיא בבנק היום' : 'כל הכסף ששמת בצד לעסק, גם אם הוא בחשבון הפרטי'}>
-      <${Money} label="סכום" value=${s.bank.amount} onChange=${(v) => up((d) => (d.bank.amount = v))} />
+      <${Money} label="סכום" value=${s.bank.amount} onChange=${(v) => up((d) => {
+        d.bank.amount = v;
+        if (d.stage === 'setup' && !d.budgetSet) d.setupBudget = v; // the budget starts as all the money
+      })} />
     <//>`}
   </div>`;
 }
@@ -549,7 +583,9 @@ function Summary({ s }) {
     (s.stage === 'setup' || s.setupDone === false) && ['נשאר לשלם על ההקמה', left],
     ['הוצאות קבועות בחודש', fixedMonthly(s)],
   ].filter(Boolean);
-  const until = rw && (rw.until ? `עד ${monthYear(rw.until)}` : 'יותר משנתיים');
+  const until = rw && (rw.free <= 0 ? 'אין כסף פנוי' : rw.until ? `עד ${monthYear(rw.until)}` : 'יותר משנתיים');
+  const span = rw && rw.free > 0 && rw.until ? (rw.months < 1 ? `${Math.max(1, Math.round(rw.months * 4.3))} שבועות` : `${num(rw.months, rw.months < 10 ? 1 : 0)} חודשים`) : '';
+  const setupLeft = s.stage === 'setup' || s.setupDone === false ? b.remaining : 0;
   return html`<div class="fb-panel !p-4 md:!p-5">
     <h2 class="fb-h3 mb-2">התמונה עד עכשיו</h2>
     <dl class="text-[14px]">
@@ -564,8 +600,8 @@ function Summary({ s }) {
     ${rw &&
     html`<div class=${cx('mt-3 rounded-xl p-3', rw.months < 3 ? 'bg-warn-50' : 'bg-canvas')}>
       <p class="text-[13px] font-bold text-muted">${s.stage === 'setup' ? 'בלי הכנסה בכלל, הכסף מחזיק' : 'בלי מכירות חדשות, הכסף מחזיק'}</p>
-      <p class=${cx('font-display text-[24px] font-black leading-tight', rw.months < 3 ? 'text-warn' : 'text-ink')}>${until}</p>
-      <p class="mt-0.5 text-[12px] text-muted">${fmt(rw.free)} פנויים${fixedMonthly(s) > 0 ? ` ÷ ${fmt(fixedMonthly(s))} בחודש = ${num(rw.months, 1)} חודשים` : ', ועוד אין הוצאות קבועות'}</p>
+      <p class=${cx('font-display text-[24px] font-black leading-tight', rw.months < 3 ? 'text-warn' : 'text-ink')}>${until}${span && html`<span class="ms-1.5 text-[15px] font-bold">· ${span}</span>`}</p>
+      <p class="mt-0.5 text-[12px] text-muted">${setupLeft > 0 ? `${fmt(rw.free + setupLeft)} פחות ${fmt(setupLeft)} להקמה (כאילו כבר שולם) = ` : ''}${fmt(rw.free)} פנויים${fixedMonthly(s) > 0 ? ` ÷ ${fmt(fixedMonthly(s))} בחודש` : ', ועוד אין הוצאות קבועות'}</p>
     </div>`}
   </div>`;
 }

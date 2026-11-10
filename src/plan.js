@@ -150,6 +150,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
   const program = ps.find((p) => p.kind === 'program');
   const wk = (n) => (n * 12) / 52;
   const t = taxRate(s);
+  const left = st.profit - st.setAside;
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך 5 · ${PARTS[3]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מהיעד אחורה: כמה העסק צריך להכניס, מאיזה מוצרים, וכמה לידים ושיחות זה אומר." />
     <${Result} icon="calculator" title=${`כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס`} big=${`${fmt(st.needed)} בחודש`}>
@@ -200,24 +201,31 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
       </div>
 
       <aside class="fb-panel !p-4 lg:sticky lg:top-4">
-        <h2 class="fb-h3 mb-3">חודש מלא עם התמהיל</h2>
-        <${Bar} label="הכנסות" value=${st.income} max=${st.needed} sub=${`${fmt(st.income)} מתוך ${fmt(st.needed)}`} />
-        <${Bar} label="נשאר לך" tone="money" value=${Math.max(0, st.profit - st.setAside)} max=${s.goal} sub=${`${fmt(st.profit - st.setAside)} מתוך ${fmt(s.goal)}`} />
-        <${Bar} limit label="שעות" value=${st.hours} max=${a.hoursMonth} sub=${`${num(st.hours)} מתוך ${num(a.hoursMonth)}`} />
-        <ul class="mt-2 border-t border-line pt-2 text-[14px]">
+        <h2 class="fb-h3">חודש מלא, עם התמהיל הזה</h2>
+        <p class="mb-3 text-[13px] text-muted">חודש שבו נמכר כל מה שבחרת כאן.</p>
+        <div class=${cx('rounded-xl p-3', left >= s.goal ? 'bg-money-50' : 'bg-error-50')}>
+          <p class="text-[13px] font-bold text-muted">נשאר לך בחודש</p>
+          <p class=${cx('font-display text-[28px] font-black leading-tight tabular-nums', left >= s.goal ? 'text-money' : 'text-error')}>${fmt(left)}</p>
+          <p class="text-[14px] font-semibold">${left >= s.goal ? `היעד ${fmt(s.goal)}: מגיעים אליו${left > s.goal ? `, ועוד ${fmt(left - s.goal)}` : ''}` : `היעד ${fmt(s.goal)}: חסרים ${fmt(s.goal - left)}`}</p>
+        </div>
+        <p class="mb-1 mt-4 text-[13px] font-bold text-muted">איך מגיעים לזה</p>
+        <ul class="text-[14px]">
+          <li class="flex justify-between py-1 font-bold"><span>נכנס מהמכירות</span><span class="tabular-nums">${fmt(st.income)}</span></li>
           ${[
-            ['הכנסות', st.income],
-            isLicensed(s) && ['מע"מ (לא שלך)', st.vat, true],
-            ['עלויות המוצרים', -st.cogs],
-            ['הוצאות קבועות', -st.fixed],
-            [`הפרשה למס (${s.taxPct}%)`, -st.tax],
-            st.setAside > 0 && ['לכרית הביטחון', -st.setAside],
+            ['עלויות המוצרים', st.cogs],
+            ['הוצאות קבועות', st.fixed],
+            [`הפרשה למס (${s.taxPct}%)`, st.tax],
+            st.setAside > 0 && ['לכרית הביטחון', st.setAside],
           ]
             .filter(Boolean)
-            .map(([k, v, aside]) => html`<li key=${k} class=${cx('flex justify-between py-1', aside && 'text-muted')}><span>${k}</span><span class="tabular-nums">${fmt(v)}</span></li>`)}
-          <li class="mt-1 flex justify-between border-t border-line pt-2 font-bold"><span>נשאר לך</span><span class=${cx('font-display text-[18px] tabular-nums', st.profit - st.setAside >= s.goal ? 'text-money' : 'text-error')}>${fmt(st.profit - st.setAside)}</span></li>
+            .map(([k, v]) => html`<li key=${k} class="flex justify-between py-1"><span>פחות ${k}</span><span class="tabular-nums text-muted">−${fmt(v)}</span></li>`)}
+          <li class="mt-1 flex justify-between border-t border-line pt-2 font-bold"><span>נשאר לך</span><span class="tabular-nums">${fmt(left)}</span></li>
         </ul>
-        <p class="mt-2 text-[13px] text-muted">שעות: ${num(st.work)} עם לקוחות + ${num(st.callH, 1)} בשיחות מכירה.</p>
+        ${isLicensed(s) && html`<p class="mt-1 text-[12px] text-muted">בלי המע"מ (${fmt(st.vat)}): הוא עובר למדינה.</p>`}
+        <div class="mt-4 border-t border-line pt-3">
+          <${Bar} limit label="שעות עבודה בחודש" value=${st.hours} max=${a.hoursMonth} sub=${`${num(st.hours)} מתוך ${num(a.hoursMonth)} שיש לך`} />
+          <p class="text-[13px] text-muted">${num(st.work)} עם לקוחות + ${num(st.callH, 1)} בשיחות מכירה.</p>
+        </div>
       </aside>
     </div>
   </div>`;
@@ -245,13 +253,14 @@ function Checks({ list, how = true }) {
           <p class="text-[13px]">${c.sub}</p>
           ${how &&
           c.how &&
-          html`<div class="mt-2 rounded-lg bg-white/80 px-2.5 py-1.5">
-            <p class="mb-0.5 text-[12px] font-bold text-muted">איך זה חושב</p>
+          html`<details class="mt-1.5">
+            <summary class="cursor-pointer text-[12px] font-bold text-brand-600">איך זה חושב</summary>
+            <div class="mt-1 rounded-lg bg-white/80 px-2.5 py-1.5">
             <dl class="text-[13px]">
               ${c.how.map(([k, v, main]) => html`<div key=${k} class=${cx('flex items-baseline justify-between gap-3 py-0.5', main && 'mt-0.5 border-t border-line pt-1 font-bold')}><dt class="min-w-0">${k}</dt><dd class="shrink-0 tabular-nums">${v}</dd></div>`)}
             </dl>
             <p class="mt-1 text-[12px] text-muted">${c.rule}</p>
-          </div>`}
+          </div></details>`}
         </div>
       </div>`;
     })}
@@ -260,14 +269,17 @@ function Checks({ list, how = true }) {
 
 // What the verdict rests on, in plain words, and what it does not check.
 function Basis({ s, m }) {
+  const ramp = m.fc.ramp;
   const a = s.assumptions;
   const items = [
     ['user', 'המספרים שלך', `הכסף בעסק, ההוצאות, המחירים, העלויות והשעות מחלקים 1-2, והיעד של ${fmt(s.goal)} בחודש מחלק 3.`],
     ['shopping-basket', 'התמהיל', `כמה מכל מוצר נמכר בחודש מלא (חלק 4). בחודש מלא העסק מכניס ${fmt(m.st.income)}.`],
     ['percent', 'שני אחוזים שאפשר לשנות', `${a.leadToCall}% מהפניות קובעות שיחה, ${a.closeRate}% מהשיחות קונות. ממוצע בתחום, עד שיהיו לך נתונים משלך (חלק 4).`],
-    ['trending-up', 'הדרך ליעד', `${s.ramp} חודשים עד חודש מלא, בקו ישר: כל חודש קצת יותר מכירות מהחודש שלפניו.`],
+    ['trending-up', 'הדרך ליעד', `${ramp} חודשים עד חודש מלא${m.fc.rampByShark ? ', לפי הקצב (למעלה)' : ', כמו שבחרת'}. בכל חודש קצת יותר מכירות מהחודש שלפניו.`],
   ];
-  return html`<${Section} title="על מה הבדיקה מבוססת" sub="אין כאן ניחוש: כל מספר מחושב מהנתונים האלה, באותו חישוב בכל פעם.">
+  return html`<details class="fb-panel mb-5 !p-4">
+    <summary class="cursor-pointer text-[16px] font-bold">על מה הבדיקה מבוססת</summary>
+    <p class="mb-3 mt-1 text-[14px] text-muted">אין כאן ניחוש: כל מספר מחושב מהנתונים האלה, באותו חישוב בכל פעם.</p>
     <ul class="grid gap-3 md:grid-cols-2">
       ${items.map(([icon, k, v]) => html`<li key=${k} class="flex items-start gap-3"><span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${icon} size=${17} /></span><span class="text-[14px]"><b class="block text-[15px]">${k}</b>${v}</span></li>`)}
     </ul>
@@ -275,7 +287,7 @@ function Basis({ s, m }) {
       <p class="text-[14px]"><b class="block text-[15px]">איך נקבעת השורה התחתונה</b>אדום באחת משלוש הבדיקות הראשונות: "יש בעיה במודל". כתום באחת מהן, או קצב גבוה: "אפשרי, עם שינוי". הכל ירוק: "המודל עובד".</p>
       <p class="text-[14px]"><b class="block text-[15px]">מה הבדיקה לא יודעת</b>אם הפניות באמת יגיעו. היא בודקת שהמספרים מסתדרים אם הן מגיעות. להביא אותן זה השיווק, ועליו עובדים בפרקים הבאים.</p>
     </div>
-  <//>`;
+  </details>`;
 }
 
 function Verdict({ v }) {
@@ -330,6 +342,16 @@ function SharkChat({ m, onClose }) {
   <//>`;
 }
 
+// How long to the full month, and why: the shark's pace (calc.rampPlan), in one sentence.
+function rampWhy(s, fc) {
+  const p = fc.plan;
+  const need = clientsText(p.need);
+  if (!fc.rampByShark) return `בחרת ${fc.ramp} חודשים. לפי הקצב, הכריש היה ממליץ על ${p.months}.`;
+  if (!p.fresh && p.ratio <= 1) return `כבר היום מגיעים מספיק לקוחות חדשים (${need} בחודש). ${p.months} חודשים כדי למלא את כל התמהיל.`;
+  if (!p.fresh) return `היום ${Math.round(p.from * 10) === 10 ? 'מגיע לקוח חדש אחד' : `מגיעים ${clientsText(p.from)} חדשים`} בחודש, ובחודש מלא צריך ${need}. עסק יכול לגדול בקצב בריא של עד ${p.grow}% יותר לקוחות חדשים בכל חודש, וככה זה ${p.months} חודשים${p.raw > 12 ? ' (12 הוא המקסימום)' : p.raw < 3 ? ' (3 הוא המינימום)' : ''}.`;
+  return `מתחילים מלקוח ראשון, ובחודש מלא צריך ${need} חדשים בחודש. עסק חדש יכול לגדול עד ${p.grow}% יותר לקוחות בכל חודש, וככה זה ${p.months} חודשים${p.raw > 12 ? ' (12 הוא המקסימום)' : p.raw < 3 ? ' (3 הוא המינימום)' : ''}.`;
+}
+
 export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
   const [table, setTable] = useState(false);
   const [chat, setChat] = useState(false);
@@ -337,19 +359,15 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
   const list = fixes(s);
   const ceiling = fc.ceilingMonth != null ? fc.rows[fc.ceilingMonth] : null;
   const yearOk = fc.yearProfit >= fc.annualGoal;
+  const reach = fc.rows[Math.min(fc.ramp, fc.rows.length) - 1];
+  const opts = [{ id: 'auto', label: `${fc.plan.months} חודשים (הכריש)` }, ...[3, 6, 9, 12].filter((n) => n !== fc.plan.months).map((n) => ({ id: n, label: `${n} חודשים` }))];
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 5 מתוך 5 · ${PARTS[4]}`} title=${['השנה ', 'הקרובה', ' במספרים']} sub="תחזית לשנים-עשר החודשים הבאים, ובדיקה אם המודל מחזיק." />
 
-    <${Section} title="תוך כמה זמן מגיעים ליעד ההכנסה החודשית שלנו?" sub=${`כלומר: עד שמוכרים את כל התמהיל של חלק 4, ${fmt(m.st.income)} הכנסות בחודש${m.st.income >= m.st.needed ? ` (צריך לפחות ${fmt(m.st.needed)} כדי להגיע ליעד)` : ''}. ${s.stage === 'setup' ? 'מתחילים מאפס, ורוב העסקים צריכים בערך חצי שנה.' : `מתחילים ממה שנכנס היום, ${fmt(todayAvg(s)?.income)} בחודש.`}`}>
-      <${Chips} options=${[3, 6, 9, 12].map((n) => ({ id: n, label: `${n} חודשים` }))} value=${s.ramp} onChange=${(v) => up((d) => (d.ramp = v))} />
-    <//>
-
     <${Verdict} v=${m.verdict} />
-    <div class="mb-5"><${Checks} list=${m.checks} /></div>
-    <${Basis} s=${s} m=${m} />
 
     <${Section}
-      title="התחזית, חודש אחרי חודש"
+      title="מתי מגיעים ליעד ההכנסה?"
       aside=${html`<div role="tablist" aria-label="תצוגה" class="flex shrink-0 rounded-xl border border-line bg-canvas p-0.5">
         ${[
           [false, 'גרף', 'chart-column'],
@@ -357,18 +375,18 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
         ].map(([v, label, icon]) => html`<button key=${label} type="button" role="tab" aria-selected=${table === v} class=${cx('flex h-8 items-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-bold cursor-pointer', table === v ? 'bg-brand-600 text-white' : 'text-muted')} onClick=${() => setTable(v)}><${Icon} name=${icon} size=${15} />${label}</button>`)}
       </div>`}
     >
+      <p class="font-display text-[24px] font-black leading-tight">תוך ${fc.ramp} חודשים${reach ? html`<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : ''}</p>
+      <p class="mb-1 text-[14px]">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(m.st.income)} בחודש.</p>
+      <p class="mb-3 text-[14px] text-muted">${rampWhy(s, fc)}</p>
+      <div class="mb-4 flex flex-wrap items-center gap-2"><span class="text-[13px] font-bold text-muted">לשנות:</span><${Chips} small options=${opts} value=${s.ramp ?? 'auto'} onChange=${(v) => up((d) => (d.ramp = v === 'auto' ? null : v))} /></div>
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
-      <p class="mt-3 text-[13px] text-muted">תחזית היא לא הבטחה. היא מראה מה קורה אם התמהיל והאחוזים של חלק 4 מתקיימים.</p>
+      <p class=${cx('mt-4 rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}>בשנה הקרובה יישאר לך <b class="tabular-nums">${fmt(fc.yearProfit)}</b>, מול יעד שנתי של ${fmt(fc.annualGoal)}: <b class=${yearOk ? 'text-money' : 'text-warn'}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b>. <span class="text-muted">כולל החודשים עד שמגיעים ליעד.</span></p>
+      ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
     <//>
-
-    <div class="mb-5 grid gap-3 md:grid-cols-3">
-      <div class="rounded-xl border border-line bg-white p-4"><small class="block text-[13px] font-bold text-muted">יישאר לך בשנה</small><b class="font-display text-[24px] tabular-nums">${fmt(fc.yearProfit)}</b></div>
-      <div class="rounded-xl border border-line bg-white p-4"><small class="block text-[13px] font-bold text-muted">היעד השנתי</small><b class="font-display text-[24px] tabular-nums">${fmt(fc.annualGoal)}</b></div>
-      <div class=${cx('rounded-xl border p-4', yearOk ? 'border-money/30 bg-money-50' : 'border-warn/30 bg-warn-50')}><small class="block text-[13px] font-bold text-muted">${yearOk ? 'מעל היעד' : 'חסר ליעד השנתי'}</small><b class=${cx('font-display text-[24px] tabular-nums', yearOk ? 'text-money' : 'text-warn')}>${fmt(Math.abs(fc.yearProfit - fc.annualGoal))}</b><small class="block text-[12px] text-muted">השנה הראשונה כוללת את החודשים עד שמגיעים ליעד ההכנסה</small></div>
-    </div>
-    ${s.stage === 'active' && html`<${Section} title="לפי רבעונים"><${Quarters} fc=${fc} /><//>`}
     ${ceiling &&
     html`<p class="mb-5 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn-50 p-3 text-[15px] text-warn"><${Icon} name="triangle-alert" size=${19} class="mt-0.5 shrink-0" /><span><b>תקרת עוסק פטור:</b> בקצב הזה, ב${monthYear(ceiling.key)} ההכנסות עוברות ${fmt(SETTINGS.exemptCeiling)} ב-12 חודשים. משם צריך להיות עוסק מורשה, ו-${SETTINGS.vatPct}% מכל מחיר עוברים למדינה. כדאי לתאם עם רואה החשבון מראש.</span></p>`}
+
+    <${Section} title="הבדיקות"><${Checks} list=${m.checks} /><//>
 
     ${list.length > 0 &&
     html`<${Section} title="מה אפשר לשנות" sub="מסודר לפי מה שמשפיע הכי הרבה. כל שינוי מראה את הבדיקות לפני ואחרי, ואפשר לבטל.">
@@ -379,6 +397,8 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
       <h3 class="mb-1 text-[15px] font-bold">מה שינית בבדיקה</h3>
       <ul class="text-[14px]">${s.applied.map((a) => html`<li key=${a.id + a.at} class="flex items-center gap-2 py-0.5"><${Icon} name="check" size=${15} class="text-brand-600" />${a.title}${a.basket ? html`<${Tag}>עודכן בסל<//>` : ''}</li>`)}</ul>
     </div>`}
+    <${Basis} s=${s} m=${m} />
+    <div class="flex flex-wrap items-center gap-3">
     <div class="flex flex-wrap items-center gap-3">
       <${Button} variant="secondary" onClick=${() => setChat(true)}><${SharkAvatar} size=${26} />לדבר על זה עם הכריש<//>
       ${m.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה. התוכנית תראה מה עוד לא מסתדר.</p>`}

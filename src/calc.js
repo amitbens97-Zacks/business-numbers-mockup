@@ -12,12 +12,15 @@
 //   - Plan back: new clients / close rate = calls; calls / lead-to-call rate = leads.
 //   - Forecast, 12 months from next month: sales grow from the start point (0 in stage 1,
 //     today's average in stages 2-3) to a full month (the whole mix) within the ramp
-//     months, in a straight line. A program paid each month brings price / months each
-//     month; everything else arrives in the month of the sale.
+//     months, in a straight line. The ramp is the shark's unless the user picks one:
+//     the months it takes new clients to grow at a healthy pace (rampPlan below).
+//   - When the money arrives: "all at the start" = in the month of the sale ("in advance"
+//     for a subscription = the average stay, paid at the start); "each month" = a program
+//     over its months, a single sale over the months the user set, a subscription monthly.
 //   - The cash line: the owner takes out what the month left, up to the goal; a loss
 //     comes out of the business's money; what is above the goal stays in the business.
 //     In stage 3 the cushion set-aside comes first, until the cushion is full.
-import { SETTINGS, FIRST_MONTH, TODAY } from './data.js';
+import { SETTINGS, FIRST_MONTH, TODAY, payOf } from './data.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const SHORT = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -86,7 +89,7 @@ export const paidProducts = (s) => s.products.filter((p) => !p.free && p.price >
 export const missingOf = (p) => [p.price == null && 'מחיר', p.cost == null && 'עלות', p.hours == null && 'שעות'].filter(Boolean);
 // In how many months the money of one sale arrives: a program paid each month spreads
 // over its months; anything else arrives at once (card installments are the client's).
-export const paymentsOf = (p) => (p.kind === 'program' && p.pay === 'monthly' ? p.months || 1 : 1);
+export const paymentsOf = (p) => (payOf(p) !== 'monthly' ? 1 : p.kind === 'program' ? p.months || 1 : p.kind === 'one' ? p.payMonths || 3 : 1);
 const callHours = (s) => s.products.find((p) => p.id === 'e1')?.hours ?? 0.5;
 export const taxRate = (s) => (s.taxPct ?? 0) / 100;
 
@@ -157,7 +160,7 @@ export function steady(s, mix) {
     gross += n * p.price;
     cogs += n * (p.cost || 0);
     work += n * (p.hours || 0);
-    const fresh = p.kind === 'monthly' ? n / (a.stayMonths || 6) : n;
+    const fresh = p.kind === 'monthly' ? n / (a.stayMonths || 3) : n;
     newClients += fresh;
     rows.push({ p, n, income: inc, fresh, hours: n * (p.hours || 0) });
   }
@@ -205,12 +208,33 @@ export const isSharkMix = (s) => !s.mix;
 
 // ---------- the 12-month forecast ----------
 
+// How long it takes to reach the full month, from the pace new clients can grow at.
+//   Stages 2-3: from today's new clients a month to what the full month needs, growing up
+//   to 10% a month (the pace check's green line): months = ln(need / today) / ln(1.1).
+//   Stage 1, no clients yet: the first client in the first month, then up to 20% more
+//   new clients each month (a small start grows faster): months = 1 + ln(need) / ln(1.2).
+//   Never fewer than 3 months or more than 12.
+export const PACE = { grow: 10, growNew: 20, min: 3, max: 12 };
+export function rampPlan(s, st) {
+  const need = st.newClients;
+  const today = s.stage === 'setup' ? null : todayAvg(s);
+  const clamp = (m) => Math.max(PACE.min, Math.min(PACE.max, Math.ceil(m - 1e-9)));
+  if (today && today.clients > 0) {
+    const ratio = need / today.clients;
+    const raw = ratio <= 1 ? 0 : Math.log(ratio) / Math.log(1 + PACE.grow / 100);
+    return { months: clamp(raw), from: today.clients, need, ratio, grow: PACE.grow, raw, fresh: false };
+  }
+  const raw = need <= 1 ? 1 : 1 + Math.log(need) / Math.log(1 + PACE.growNew / 100);
+  return { months: clamp(raw), from: 1, need, ratio: need, grow: PACE.growNew, raw, fresh: true };
+}
+
 export function forecast(s, mix) {
   const st = steady(s, mix);
   const t = taxRate(s);
   const today = s.stage === 'setup' ? null : todayAvg(s);
   const r0 = today && st.income > 0 ? Math.min(1, today.income / st.income) : 0;
-  const ramp = s.ramp || 6;
+  const plan = rampPlan(s, st);
+  const ramp = s.ramp ?? plan.months;
   const f = (m) => r0 + (1 - r0) * Math.min(1, m / ramp);
   const vatDiv = isLicensed(s) ? 1 + vatRate() : 1;
   const ps = paidProducts(s);
@@ -224,8 +248,17 @@ export function forecast(s, mix) {
       if (!n) continue;
       cogsAt[i] += n * (p.cost || 0);
       if (p.kind === 'monthly') {
-        incomeAt[i] += n * netPrice(s, p);
-        grossAt[i] += n * p.price;
+        if (payOf(p) === 'start') {
+          // Paid in advance: each new client pays the average stay at the start.
+          const stay = s.assumptions.stayMonths || 3;
+          const prev = (mix[p.id] || 0) * (i === 0 ? r0 : f(i));
+          const fresh = n / stay + Math.max(0, n - prev);
+          incomeAt[i] += fresh * stay * netPrice(s, p);
+          grossAt[i] += fresh * stay * p.price;
+        } else {
+          incomeAt[i] += n * netPrice(s, p);
+          grossAt[i] += n * p.price;
+        }
         continue;
       }
       const k = paymentsOf(p);
@@ -279,7 +312,7 @@ export function forecast(s, mix) {
     return { q: q + 1, from: part[0].key, to: part[2].key, profit: part.reduce((x, r) => x + r.profit, 0), goal: Math.round((annualGoal * share) / 100) * 100 };
   });
   return {
-    rows, st, r0, ramp, startCash, cushion, goalIdx, minRow, fillIdx, yearProfit, annualGoal, quarters,
+    rows, st, r0, ramp, plan, rampByShark: s.ramp == null, startCash, cushion, goalIdx, minRow, fillIdx, yearProfit, annualGoal, quarters,
     yearIncome: rows.reduce((x, r) => x + r.income, 0),
     yearGross, ceilingMonth,
   };
@@ -495,9 +528,10 @@ export function fixes(s) {
   }
 
   // More time to reach a full month (gentler pace, and a softer start for the cash).
-  if ((s.ramp || 6) < 12 && (byId.pace.tone === 'warn' || byId.pace.tone === 'bad' || byId.cash.tone !== 'ok')) {
-    const to = Math.min(12, (s.ramp || 6) + 3);
-    c.push({ id: 'time-more', icon: 'calendar-plus', title: `${to} חודשים להגיע ליעד ההכנסה`, sub: `במקום ${s.ramp || 6}. הקצב בכל חודש יורד`, make: (x) => ({ ...freeze(x), ramp: to }) });
+  const rampNow = now.fc.ramp;
+  if (rampNow < 12 && (byId.pace.tone === 'warn' || byId.pace.tone === 'bad' || byId.cash.tone !== 'ok')) {
+    const to = Math.min(12, rampNow + 3);
+    c.push({ id: 'time-more', icon: 'calendar-plus', title: `${to} חודשים להגיע ליעד ההכנסה`, sub: `במקום ${rampNow}. הקצב בכל חודש יורד`, make: (x) => ({ ...freeze(x), ramp: to }) });
   }
 
   // Another goal for the first year: what this mix really leaves.

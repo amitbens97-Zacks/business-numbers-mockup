@@ -54,7 +54,7 @@ export function DocScreen({ s, m }) {
       <${H} n="2">המחירים<//>
       <table class="w-full text-[14px]">
         <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">מוצר</th><th class="pb-1 text-start">מחיר</th><th class="pb-1 text-start">מתי הכסף נכנס</th><th class="pb-1 text-end">לשעת עבודה</th></tr></thead>
-        <tbody>${ps.map((p) => html`<tr key=${p.id} class="border-t border-line"><td class="py-1.5 pe-2 font-bold">${p.name}</td><td class="py-1.5 tabular-nums">${fmt(p.price)}${p.kind === 'monthly' ? ' לחודש' : ''}</td><td class="py-1.5 pe-2">${cashText(p)}</td><td class="py-1.5 text-end tabular-nums">${fmt(perHour(s, p))}</td></tr>`)}</tbody>
+        <tbody>${ps.map((p) => html`<tr key=${p.id} class="border-t border-line"><td class="py-1.5 pe-2 font-bold">${p.name}</td><td class="py-1.5 tabular-nums">${fmt(p.price)}${p.kind === 'monthly' ? ' לחודש' : ''}</td><td class="py-1.5 pe-2">${cashText(p, s.assumptions.stayMonths || 3)}</td><td class="py-1.5 text-end tabular-nums">${fmt(perHour(s, p))}</td></tr>`)}</tbody>
       </table>
       ${isLicensed(s) && html`<p class="mt-1 text-[13px] text-muted">המחירים כוללים מע"מ ${SETTINGS.vatPct}%. החישובים לוקחים רק את מה שנשאר לעסק.</p>`}
 
@@ -81,7 +81,7 @@ export function DocScreen({ s, m }) {
       <${H} n="5">התחזית לשנה<//>
       <${ForecastChart} fc=${fc} goal=${s.goal} />
       <div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>
-      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), תוך ${s.ramp} חודשים.</p>
+      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), תוך ${fc.ramp} חודשים.</p>
       <div class="mt-3"><${Checks} list=${m.checks} how=${false} /></div>
       ${s.applied.length > 0 &&
       html`<p class="mt-3 text-[15px] font-bold">מה שינית בדרך</p>
