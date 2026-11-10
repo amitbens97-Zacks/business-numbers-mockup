@@ -3,8 +3,8 @@
 import { html, useState, useRef, Icon, cx, parseNum } from './lib.js';
 import { Button, Note, StepHeading, How, CalcLines } from './components.js';
 import { Chips, Field, inputCls, Tag } from './ui.js';
-import { STAGES, PARTS, PAY, SETTINGS, nextId, g, payOf } from './data.js';
-import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed } from './calc.js';
+import { STAGES, PARTS, PAY, SETTINGS, nextId, g, payOf, FROM_STEP2 } from './data.js';
+import { fmt, num, netPrice, perHour, paidProducts, missingOf, isLicensed, overCeiling } from './calc.js';
 
 // ---------- small shared inputs ----------
 
@@ -83,15 +83,15 @@ export function Opening() {
       <${Note} tone="white" tilt=${1.2} class="w-[300px] !p-5">
         <span class="fb-note-kicker">התוכנית העסקית שלך</span>
         <div class="mt-2 flex flex-col gap-1 text-[15px]">
-          <${Kv} k="היעד בחודש" v=${fmt(12000)} />
-          <${Kv} k="צריך להכניס" v=${fmt(16900)} />
-          <${Kv} k="לקוחות חדשים בחודש" v="3" />
+          <${Kv} k="היעד שלך בחודש" v=${fmt(FROM_STEP2.goal)} />
+          <${Kv} k="כמה צריך להכניס" v=${html`<span class="text-muted">נגלה בחלק 4</span>`} />
+          <${Kv} k="לקוחות חדשים בחודש" v=${html`<span class="text-muted">נגלה בחלק 4</span>`} />
         </div>
         <svg viewBox="0 0 260 70" class="mt-3 w-full" aria-hidden="true">
           ${[8, 15, 25, 34, 42, 50, 54, 56, 56, 56, 56, 56].map((h, i) => html`<rect x=${i * 21 + 4} y=${66 - h} width="14" height=${h} rx="2" fill=${h >= 52 ? '#0038b8' : '#8fb3ef'} />`)}
           <line x1="0" x2="260" y1="14" y2="14" stroke="#2d3e66" stroke-width="1.5" stroke-dasharray="5 4" />
         </svg>
-        <p class="mt-2 flex items-center gap-1.5 font-display text-[18px] font-black text-brand-600"><${Icon} name="badge-check" size=${20} />המודל עובד</p>
+        <p class="mt-2 flex items-center gap-1.5 font-display text-[18px] font-black text-brand-600"><${Icon} name="badge-check" size=${20} />המודל עובד?</p>
       <//>
       <span class="hand absolute bottom-0 left-4 rotate-[-4deg] whitespace-nowrap text-[26px]">מספרים, לא תחושות</span>
     </div>
@@ -236,7 +236,7 @@ export function PricesScreen({ s, up, notify, undoTo }) {
   };
   return html`<div class="mx-auto max-w-[1000px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 2 מתוך 5 · ${PARTS[1]}`} title=${['כמה כל מוצר ', 'מכניס', '?']} sub="המוצרים מהסל שלך. כל שינוי כאן נשמר גם בסל המוצרים." />
-    ${isLicensed(s) && html`<${Note} tone="white" tilt=${-0.6} class="mb-5 max-w-xl"><span class="fb-note-kicker">עוסק מורשה</span>המחירים כוללים מע"מ. מכל מכירה ${SETTINGS.vatPct}% עוברים למדינה, אז החישובים כאן לוקחים רק את מה שנשאר לך.<//>`}
+    ${isLicensed(s) && html`<${Note} tone="white" tilt=${-0.6} class="mb-5 max-w-xl"><span class="fb-note-kicker">${overCeiling(s) ? 'מעל תקרת עוסק פטור' : 'עוסק מורשה'}</span>${overCeiling(s) ? `בתוכנית שלך העסק עובר את תקרת עוסק פטור, אז הוא יהיה עוסק מורשה. ` : ''}המחירים כוללים מע"מ. מכל מכירה ${SETTINGS.vatPct}% עוברים למדינה, אז החישובים כאן לוקחים רק את מה שנשאר לך.<//>`}
     ${paid.length === 0 && !adding && html`<${NewProduct} first onAdd=${(np) => up((d) => d.products.push(np), `${np.name} נכנס לסל המוצרים`)} />`}
     <div class="flex flex-col gap-4">
       ${paid.map((p) => html`<${ProductCard} key=${p.id} s=${s} p=${p} set=${(fn) => up((d) => fn(d.products.find((x) => x.id === p.id)))} onBasket=${onBasket} />`)}

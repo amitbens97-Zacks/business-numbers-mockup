@@ -7,7 +7,7 @@ import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, FINANCE_URL, FINANCE_SCENAR
 import { cashText } from './parts.js';
 import {
   fmt, num, monthYear, todayText, todayAvg, runway, fixedMonthly, setupSummary, cushionTarget, setAsideMonthly,
-  paidProducts, netPrice, perHour, isLicensed, taxPctOf,
+  paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling,
 } from './calc.js';
 import { ForecastChart, ForecastLegend } from './chart.js';
 import { Checks, Verdict, Quarters } from './plan.js';
@@ -22,7 +22,7 @@ export function DocScreen({ s, m }) {
   const avg = s.stage === 'setup' ? null : todayAvg(s);
   const rw = runway(s);
   const ps = paidProducts(s);
-  const ent = ENTITIES.find((e) => e.id === s.entity).label;
+  const ent = overCeiling(s) ? 'עוסק מורשה (בתוכנית עוברים את תקרת עוסק פטור)' : ENTITIES.find((e) => e.id === s.entity).label;
   return html`<div class="mx-auto max-w-[860px] px-4 py-6 md:px-8">
     <div class="no-print mb-3 flex flex-wrap items-center justify-between gap-2">
       <p class="fb-eyebrow">התוצר של השלב</p>
@@ -43,7 +43,7 @@ export function DocScreen({ s, m }) {
       <${H} n="1">המצב היום<//>
       <table class="w-full text-[15px]"><tbody>
         <${Row} k=${s.bank.has ? 'בחשבון הבנק של העסק' : 'הכסף של העסק'} v=${fmt(s.bank.amount)} />
-        ${s.stage === 'setup' && html`<${Row} k="תקציב ההקמה" v=${`${fmt(setupSummary(s).budget)} · שולם ${fmt(setupSummary(s).spent)} · נשאר ${fmt(setupSummary(s).remaining)}`} />`}
+        ${s.stage === 'setup' && html`<${Row} k="תקציב ההקמה" v=${`${fmt(setupSummary(s).budget)} · שולם ${fmt(setupSummary(s).spent)} · נשאר לשלם ${fmt(setupSummary(s).remaining)}${setupSummary(s).withBudget && setupSummary(s).budget > setupSummary(s).final ? ` · פנוי ${fmt(setupSummary(s).budget - setupSummary(s).final)}` : ''}`} />`}
         ${avg && html`<${Row} k="חודש ממוצע היום" v=${`נכנס ${fmt(avg.income)} · נשאר ${fmt(avg.left)}`} />`}
         ${s.stage !== 'setup' && html`<${Row} k="כסף שעוד מגיע מלקוחות" v=${fmt((s.toCome.now || 0) + (s.toCome.next || 0) + (s.toCome.later || 0))} />`}
         ${s.stage === 'active' && html`<${Row} k="הכנסה קבועה" v=${`${fmt(s.regular.amount)} ב-${s.regular.day} לחודש`} />`}
@@ -81,7 +81,7 @@ export function DocScreen({ s, m }) {
       <${H} n="5">התחזית לשנה<//>
       <${ForecastChart} fc=${fc} goal=${s.goal} />
       <div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>
-      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), ${fc.ramp != null && fc.ramp <= 12 ? `תוך ${fc.ramp} חודשים` : 'רק אחרי יותר משנה'}, לפי התסריט הריאלי.</p>
+      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), ${fc.ramp != null && fc.ramp <= 12 ? `תוך ${fc.ramp} חודשים` : 'רק אחרי יותר משנה'}, לפי התסריט הריאלי.${fc.yearProfit < fc.annualGoal && fc.goalIdx >= 0 ? ` השנה הראשונה כוללת את הדרך לחודש מלא; מ${monthYear(fc.rows[fc.goalIdx].key)} היעד נשאר לך בכל חודש.` : ''}</p>
       <div class="mt-3"><${Checks} list=${m.checks} how=${false} /></div>
       ${s.applied.length > 0 &&
       html`<p class="mt-3 text-[15px] font-bold">מה שינית בדרך</p>

@@ -87,7 +87,26 @@ export const savedOf = (list) => list.reduce((t, x) => t + x.value, 0);
 // ---------- prices ----------
 
 export const vatRate = () => SETTINGS.vatPct / 100;
-export const isLicensed = (s) => s.entity === 'licensed';
+// Above the exempt ceiling the business has to be licensed. If the full month of an exempt
+// business is over the ceiling in a year, the plan (what to sell, the forecast, the checks)
+// counts VAT: 18% of every price goes to the state. The mix is the one as exempt (_raw), so
+// there is no loop. Cached per state object.
+const overCache = new WeakMap();
+export function overCeiling(s) {
+  if (s.entity !== 'exempt' || s._raw) return false;
+  if (overCache.has(s)) return overCache.get(s);
+  overCache.set(s, false);
+  const raw = { ...s, _raw: true };
+  const year = steady(raw, mixOf(raw)).gross * 12;
+  const v = year > SETTINGS.exemptCeiling;
+  overCache.set(s, v);
+  return v;
+}
+// The full month in a year, at the prices the clients pay.
+export const fullYearGross = (s) => { const raw = { ...s, _raw: true }; return steady(raw, mixOf(raw)).gross * 12; };
+export const isLicensed = (s) => s.entity === 'licensed' || overCeiling(s);
+// What the user registered as (the past: history, money already agreed).
+const wasLicensed = (s) => s.entity === 'licensed';
 export const netPrice = (s, p) => (isLicensed(s) ? p.price / (1 + vatRate()) : p.price);
 export const profitPerSale = (s, p) => netPrice(s, p) - (p.cost || 0);
 export const perHour = (s, p) => (p.hours > 0 ? profitPerSale(s, p) / p.hours : null);
@@ -221,7 +240,7 @@ export function todayAvg(s) {
   const n = monthsSince(h.from);
   const gross = h.income / n;
   const clients = (h.clients || 0) / n;
-  const income = isLicensed(s) ? gross / (1 + vatRate()) : gross;
+  const income = wasLicensed(s) ? gross / (1 + vatRate()) : gross;
   const out = fixedMonthly(s);
   const tax = Math.max(0, income - out) * taxRate(s);
   const pastOut = h.out != null ? h.out / n : null;
@@ -392,7 +411,7 @@ export function forecast(s, mix, key = 'real') {
   const ramp = plan.months;
   const f = plan.level;
   const r0 = f(0);
-  const vatDiv = isLicensed(s) ? 1 + vatRate() : 1;
+  const vatDiv = wasLicensed(s) ? 1 + vatRate() : 1;
   const ps = paidProducts(s);
   const incomeAt = new Array(12).fill(0);
   const grossAt = new Array(12).fill(0);

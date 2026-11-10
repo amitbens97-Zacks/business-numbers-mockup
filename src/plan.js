@@ -7,7 +7,7 @@ import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
 import { Money, Stepper, Section, Result, YesNo } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
-  fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
+  fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, fullYearGross, netPrice,
   paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, KIDS, kidPoints, reservePoints, DEGREE_PTS, OLEH_PTS, SETTLE, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
@@ -41,7 +41,8 @@ export function GoalScreen({ s, up, m }) {
     <${Section} title="סוג העוסק" sub=${'קובע כמה מכל מכירה נכנס לעסק, ומה עובר למע"מ.'}>
       <${Chips} options=${ENTITIES} value=${s.entity} onChange=${(v) => up((d) => ((d.entity = v), (d.taxPct = SETTINGS.taxPct[v])))} />
       <p class="mt-2 text-[14px] text-muted">${s.entity === 'exempt' ? `עוסק פטור לא גובה מע"מ, עד תקרה של ${fmt(SETTINGS.exemptCeiling)} בשנה.` : `עוסק מורשה גובה מע"מ: מכל מחיר בסל ${SETTINGS.vatPct}% עוברים למדינה.`}</p>
-      ${s.entity === 'exempt' && yearToday > SETTINGS.exemptCeiling && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-warn-50 p-2.5 text-[14px] font-semibold text-warn"><${Icon} name="triangle-alert" size=${17} />בקצב של היום ההכנסה בשנה היא ${fmt(yearToday)}, מעל התקרה. כדאי לבדוק עם רואה החשבון מעבר לעוסק מורשה.</p>`}
+      ${overCeiling(s) && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-warn-50 p-2.5 text-[14px] font-semibold text-warn"><${Icon} name="triangle-alert" size=${17} class="mt-0.5 shrink-0" /><span>כדי להגיע ליעד, העסק יכניס בערך ${fmt(m.st.gross * 12)} בשנה, מעל התקרה של עוסק פטור (${fmt(SETTINGS.exemptCeiling)}). אז ${g('תהיה', 'תהיי')} עוסק מורשה, והתוכנית כבר מחושבת ככה: ${SETTINGS.vatPct}% מכל מחיר עוברים למע"מ. כדאי לתאם עם רואה החשבון מתי לעבור.</span></p>`}
+      ${s.entity === 'exempt' && !overCeiling(s) && yearToday > SETTINGS.exemptCeiling && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-warn-50 p-2.5 text-[14px] font-semibold text-warn"><${Icon} name="triangle-alert" size=${17} />בקצב של היום ההכנסה בשנה היא ${fmt(yearToday)}, מעל התקרה. כדאי לבדוק עם רואה החשבון מעבר לעוסק מורשה.</p>`}
     <//>
 
     <${TaxCalc} s=${s} up=${up} />
@@ -263,7 +264,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך 5 · ${PARTS[3]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מהיעד אחורה: כמה העסק צריך להכניס, מאיזה מוצרים, וכמה לידים ושיחות זה אומר." />
     <${Result} icon="calculator" title=${`כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס`} big=${`${fmt(st.needed)} בחודש`}>
-      <span class="block text-[14px]">היעד, ועוד המס עליו, ועוד כל ההוצאות.</span>
+      <span class="block text-[14px]">היעד, ועוד המס עליו, ועוד כל ההוצאות.${overCeiling(s) ? ` מחושב כעוסק מורשה: בסכום הזה העסק עובר את תקרת עוסק פטור.` : ''}</span>
       <${How}><${CalcLines}
         lines=${[
           ['היעד: מה שנשאר לך', fmt(s.goal)],
@@ -606,7 +607,7 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
       <${ScenarioHow} fc=${fc} />
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
       <div class="mt-4 grid gap-2 sm:grid-cols-2">
-        <p class=${cx('rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}><span class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</span><b class="font-display text-[20px] tabular-nums">${fmt(fc.yearProfit)}</b> <span class="text-[14px]">מול יעד של ${fmt(fc.annualGoal)}:</span> <b class=${cx('text-[14px]', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b></p>
+        <p class=${cx('rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}><span class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</span><b class="font-display text-[20px] tabular-nums">${fmt(fc.yearProfit)}</b> <span class="text-[14px]">מול יעד של ${fmt(fc.annualGoal)}:</span> <b class=${cx('text-[14px]', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b>${!yearOk && fc.goalIdx >= 0 ? html`<span class="mt-1 block text-[13px] text-muted">החודשים עד ${monthName(fc.rows[fc.goalIdx].key)} הם הדרך לחודש מלא. משם היעד נשאר לך בכל חודש.</span>` : ''}</p>
         <p class=${cx('rounded-xl p-3 text-[15px]', cashOk ? 'bg-money-50' : 'bg-error-50')}><span class="block text-[13px] font-bold text-muted">הכסף בעסק, בנקודה הכי נמוכה</span><b class=${cx('font-display text-[20px] tabular-nums', !cashOk && 'text-error')}>${fmt(low.cash)}</b> <span class="text-[14px]">ב${monthYear(low.key)}${cashOk ? ', לא נכנסים למינוס' : ', העסק במינוס'}</span></p>
       </div>
       <${How} class="mt-1"><${CalcLines}
@@ -619,6 +620,8 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
       /><//>
       ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
     <//>
+    ${overCeiling(s) &&
+    html`<p class="mb-5 flex items-start gap-2 rounded-xl border border-brand-300 bg-brand-50 p-3 text-[15px]"><${Icon} name="info" size=${19} class="mt-0.5 shrink-0 text-brand-600" /><span><b>מחושב כעוסק מורשה:</b> בחודש מלא העסק מכניס ${fmt(m.st.gross * 12)} בשנה, מעל תקרת עוסק פטור. לכן התחזית מורידה ${SETTINGS.vatPct}% מע"מ מכל מכירה, כל השנה. בפועל אפשר להישאר פטור עד שעוברים את התקרה, אז החודשים הראשונים יהיו קצת יותר טובים.</span></p>`}
     ${ceiling &&
     html`<p class="mb-5 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn-50 p-3 text-[15px] text-warn"><${Icon} name="triangle-alert" size=${19} class="mt-0.5 shrink-0" /><span><b>תקרת עוסק פטור:</b> בקצב הזה, ב${monthYear(ceiling.key)} ההכנסות עוברות ${fmt(SETTINGS.exemptCeiling)} ב-12 חודשים. משם צריך להיות עוסק מורשה, ו-${SETTINGS.vatPct}% מכל מחיר עוברים למדינה. כדאי לתאם עם רואה החשבון מראש.</span></p>`}
 

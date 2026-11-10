@@ -712,7 +712,7 @@ function Summary({ s, up }) {
   const left = s.stage === 'setup' || s.setupDone === false ? b.remaining : 0;
   const rows = [
     ['כסף בעסק היום', s.bank.amount],
-    s.stage !== 'setup' && ['הכנסה ממוצעת בחודש', avg ? avg.income : null, isLicensed(s) ? 'בלי מע"מ' : ''],
+    s.stage !== 'setup' && ['הכנסה ממוצעת בחודש', avg ? avg.income : null, s.entity === 'licensed' ? 'בלי מע"מ' : ''],
     s.stage === 'active' && ['מזה הכנסה קבועה', s.regular.amount],
     s.stage !== 'setup' && ['כסף שעוד מגיע', toComeOf(s)],
     (s.stage === 'setup' || s.setupDone === false) && ['נשאר לשלם על ההקמה', left],
