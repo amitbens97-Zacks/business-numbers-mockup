@@ -216,22 +216,23 @@ function SetupTable({ s, up }) {
     </div>
     <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} sw=${fbSwitchOf(x.name, s, 'setup')} />`))}</ul>
     ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים. אפשר להוסיף פריט, או להתחיל מההצעות של הכריש.</p>`}
-    ${b.unallocated > 0 &&
-    html`<div class=${cx('grid grid-cols-4 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
-      <div class="col-span-4 flex min-w-0 items-center gap-2.5 md:col-span-1">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border-[1.5px] border-dashed border-brand-300 text-brand-600"><${Icon} name="plus" size=${16} /></span>
-        <span class="min-w-0"><b class="block text-[15px]">עוד לא חולק לפריטים</b><button type="button" onClick=${() => add()} class="text-[12px] font-bold text-brand-600 hover:underline cursor-pointer">לחלק לפריט חדש</button></span>
-      </div>
-      ${cell('תכננת', html`<${Num} n=${b.unallocated} class="text-[16px]" />`)}
-      ${cell('שולם', html`<span class="font-display text-[16px] font-extrabold text-faint">${fmt(0)}</span>`)}
-      ${cell('נשאר לשלם', html`<${Num} n=${b.unallocated} class="text-[16px]" />`)}
-    </div>`}
     <div class=${cx('grid grid-cols-4 items-center gap-x-2 gap-y-1 border-t-2 border-ink/70 pt-3 md:gap-x-3', SETUP_COLS)}>
-      <b class="col-span-4 text-[15px] md:col-span-1">סך הכול</b>
-      ${cell('תכננת', total(b.allocated + b.unallocated))}
+      <b class="col-span-4 text-[15px] md:col-span-1">סך הכול בפריטים</b>
+      ${cell('תכננת', total(b.allocated))}
       ${cell('שולם', total(b.spent))}
-      ${cell('נשאר לשלם', total(b.remaining))}
+      ${cell('נשאר לשלם', total(b.remaining - b.unallocated))}
     </div>
+    ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל ${s.setup.filter((x) => x.flowbiz).map((x) => x.name).join(' ו')}, ש-FlowBiz בונה: המחיר בשוק (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))}) לא נספר.</p>`}
+    ${b.unallocated > 0 &&
+    html`<div class="mt-3 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3 text-[14px]">
+      <p class="font-bold">עוד ${fmt(b.unallocated)} מהתקציב לא שייכים לשום פריט</p>
+      <p class="text-muted">התקציב ${fmt(b.budget)}, ובפריטים ${fmt(b.allocated)}. ההפרש שמור להקמה: בחישוב של כמה זמן הכסף מחזיק הוא נחשב כאילו כבר הוצא.</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button type="button" onClick=${() => add({ planned: b.unallocated })} class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${13} />לשייך לפריט חדש</button>
+        <button type="button" onClick=${() => up((d) => ((d.setupBudget = b.allocated + b.over), (d.budgetSet = true)), `התקציב ירד ל-${fmt(b.allocated + b.over)}`)} class="inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="arrow-down" size=${13} />להוריד את התקציב ל-${fmt(b.allocated + b.over)}</button>
+      </div>
+      <p class="mt-1.5 text-[12px] text-muted">מורידים את התקציב? ההפרש חוזר להיות כסף פנוי לחודשים הבאים.</p>
+    </div>`}
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
