@@ -741,7 +741,7 @@ function Summary({ s, up }) {
     html`<div class=${cx('mt-3 rounded-xl p-3', avg.left < 0 ? 'bg-warn-50' : 'bg-brand-50')}>
       <p class="text-[13px] font-bold text-muted">בחודש ממוצע היום נשארים</p>
       <p class=${cx('font-display text-[26px] font-black leading-tight tabular-nums', avg.left < 0 ? 'text-warn' : 'text-brand-600')}>${fmt(avg.left)}</p>
-      <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['פחות הפרשה למס', fmt(-avg.tax)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
+      <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['פחות מס וביטוח לאומי (על מה שנשאר)', fmt(-avg.tax)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
     </div>`}
     ${showRw &&
     html`<div class=${cx('mt-3 rounded-xl p-3', rw.months < 3 ? 'bg-warn-50' : 'bg-canvas')}>

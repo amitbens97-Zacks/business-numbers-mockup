@@ -97,7 +97,75 @@ export const missingOf = (p) => [p.price == null && 'מחיר', p.cost == null &
 // over its months; anything else arrives at once (card installments are the client's).
 export const paymentsOf = (p) => (payOf(p) === 'monthly' && p.kind === 'program' ? p.months || 1 : 1);
 const callHours = (s) => s.products.find((p) => p.id === 'e1')?.hours ?? 0.5;
-export const taxRate = (s) => (s.taxPct ?? 0) / 100;
+// ---------- tax (the accountant chapter's calculator, 2026) ----------
+// Income tax by the 2026 brackets, minus credit points; National Insurance and health on the
+// business profit (reduced rate up to 60% of the average wage, a salary uses up that part
+// first). With a salary, the business is taxed from where the salary ends. The rate is the
+// share of the profit before tax that goes to tax and NI, at the profit that leaves the goal.
+// Conservative: no NI deduction, no pension deposits.
+export const TAX_2026 = {
+  brackets: [[84120, 0.1], [120720, 0.14], [228000, 0.2], [301200, 0.31], [560280, 0.35], [721560, 0.47], [Infinity, 0.5]],
+  point: 2904,
+  niLow: 7703 * 12,
+  niLowRate: 0.0597,
+  niRate: 0.1783,
+};
+export const NI_MIN = 'ביטוח לאומי (מינימום)';
+function bracketTax(x) {
+  let tax = 0;
+  let from = 0;
+  for (const [to, r] of TAX_2026.brackets) {
+    if (x <= from) break;
+    tax += (Math.min(x, to) - from) * r;
+    from = to;
+  }
+  return tax;
+}
+// The credit points, by what the user filled (s.taxCalc).
+export function creditPoints(c) {
+  const kids = (c.kidsSmall || 0) * 1.5 + (c.kidsBig || 0);
+  const lines = [
+    [c.gender === 'f' ? 'אישה' : 'גבר', c.gender === 'f' ? 2.75 : 2.25],
+    [c.soldier === 2 ? 'שחרור מצה"ל, 22 חודשי שירות ומעלה' : 'שחרור מצה"ל, 12-21 חודשי שירות', [0, 1, 2][c.soldier || 0]],
+    [`ילדים (${(c.kidsSmall || 0) + (c.kidsBig || 0)})`, kids],
+    ['מילואים פעיל', c.reserve ? 0.5 : 0],
+    ['הורה יחיד או משלם מזונות', c.single ? 1 : 0],
+    [c.degree === 1 ? 'תואר ראשון' : 'תואר שני או תעודת מקצוע', [0, 1, 0.5][c.degree || 0]],
+    ['עלייה', [0, 3, 2, 1][c.oleh || 0]],
+  ].filter(([, n]) => n > 0);
+  return { lines, total: lines.reduce((a, [, n]) => a + n, 0) };
+}
+// Tax and NI on a year's business profit P.
+export function taxOn(s, P) {
+  const c = s.taxCalc || {};
+  const salary = c.sole === false ? (c.salary || 0) * 12 : 0;
+  const pts = creditPoints(c);
+  const credit = pts.total * TAX_2026.point;
+  const after = (x) => Math.max(0, bracketTax(x) - credit);
+  const gross = bracketTax(salary + P) - bracketTax(salary);
+  const incomeTax = after(salary + P) - after(salary);
+  const low = Math.max(0, TAX_2026.niLow - salary);
+  const ni = Math.min(P, low) * TAX_2026.niLowRate + Math.max(0, P - low) * TAX_2026.niRate;
+  const niMin = s.expenses.filter((x) => x.name === NI_MIN).reduce((a, x) => a + (x.amount || 0) * 12, 0);
+  const niNet = Math.max(0, ni - niMin);
+  return { P, salary, pts, credit, gross, incomeTax, ni, niMin, niNet, total: incomeTax + niNet };
+}
+// At the goal: the yearly profit before tax that leaves 12 x the goal, and its rate.
+export function taxAtGoal(s) {
+  const want = 12 * Math.max(0, s.goal || 0);
+  let lo = want;
+  let hi = want * 3 + 1000;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (mid - taxOn(s, mid).total >= want) hi = mid;
+    else lo = mid;
+  }
+  const r = taxOn(s, hi);
+  return { ...r, want, rate: hi > 0 ? r.total / hi : 0 };
+}
+export const taxRate = (s) => (s.taxManual ? (s.taxPct ?? 0) / 100 : taxAtGoal(s).rate);
+// The rate as the user sees it, one decimal.
+export const taxPctOf = (s) => Math.round(taxRate(s) * 1000) / 10;
 
 // ---------- today (stages 2-3) ----------
 
@@ -119,7 +187,7 @@ export function todayAvg(s) {
   const clients = (h.clients || 0) / n;
   const income = isLicensed(s) ? gross / (1 + vatRate()) : gross;
   const out = fixedMonthly(s);
-  const tax = income * taxRate(s);
+  const tax = Math.max(0, income - out) * taxRate(s);
   const pastOut = h.out != null ? h.out / n : null;
   return { gross, income, vat: gross - income, clients, out, tax, left: income - out - tax, n, pastOut };
 }
@@ -175,13 +243,15 @@ export function steady(s, mix, key = 'real') {
   const calls = a.closeRate > 0 ? newClients / (a.closeRate / 100) : 0;
   const leads = a.leadToCall > 0 ? calls / (a.leadToCall / 100) : 0;
   const callH = calls * callHours(s);
-  const tax = income * t;
+  // Tax on the profit: what is left after the products and the fixed expenses.
+  const tax = Math.max(0, income - cogs - fixed) * t;
   const profit = income - cogs - fixed - tax;
   const goal = s.goal || 0;
-  const needed = (goal + fixed + cogs + setAside) / (1 - t);
+  const beforeTax = (goal + setAside) / (1 - t);
+  const needed = beforeTax + fixed + cogs;
   const hours = work + callH;
   return {
-    income, gross, vat: gross - income, cogs, fixed, fixedGrow, fixedBase: fixed - fixedGrow, tax, profit, setAside, needed,
+    income, gross, vat: gross - income, cogs, fixed, fixedGrow, fixedBase: fixed - fixedGrow, tax, profit, setAside, needed, beforeTax,
     work, callH, hours, newClients, calls, leads, rows,
     perHour: work > 0 ? (income - cogs) / work : 0,
   };
@@ -341,7 +411,7 @@ export function forecast(s, mix, key = 'real') {
     const income = incomeAt[i];
     const grow = growingIn(s, i) * ((plan.P.cost || 0) / 100) * plan.grown(i + 1);
     const fixed = fixedIn(s, i) + grow;
-    const tax = income * t;
+    const tax = Math.max(0, income - cogsAt[i] - fixed) * t;
     const profit = income - cogsAt[i] - fixed - tax;
     const keep = Math.min(aside, Math.max(0, profit), st.setAside || 0);
     aside -= keep;
@@ -387,7 +457,7 @@ export function checks(s, mix, fc) {
     ['פחות עלויות המוצרים', fmt(-st.cogs)],
     ['פחות הוצאות קבועות', fmt(-st.fixedBase)],
     st.fixedGrow > 0 && [`פחות העלייה בפרסום ובכלים כשהעסק גדל (${paceOf(s, fc.key).cost}%)`, fmt(-st.fixedGrow)],
-    [`פחות הפרשה למס (${s.taxPct}%)`, fmt(-st.tax)],
+    [`פחות מס וביטוח לאומי (${taxPctOf(s)}% מהרווח)`, fmt(-st.tax)],
     st.setAside > 0 && ['פחות לכרית הביטחון', fmt(-st.setAside)],
     ['נשאר לך', fmt(st.profit - st.setAside), true],
     ['היעד', fmt(goal)],
@@ -400,7 +470,7 @@ export function checks(s, mix, fc) {
   );
 
   // 2. The hours: what each work hour has to earn, against what the basket earns.
-  const needPerHour = avail > 0 ? (goal + st.fixed + st.setAside) / (1 - t) / avail : Infinity;
+  const needPerHour = avail > 0 ? ((goal + st.setAside) / (1 - t) + st.fixed) / avail : Infinity;
   const timeTone = st.hours > avail ? 'bad' : st.hours > avail * 0.9 ? 'warn' : 'ok';
   out.push({
     id: 'time',

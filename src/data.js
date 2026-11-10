@@ -292,7 +292,10 @@ function base(extra) {
     goal: FROM_STEP2.goal,
     goalConfirmed: false,
     entity: 'exempt',
-    taxPct: SETTINGS.taxPct.exempt,
+    taxPct: SETTINGS.taxPct.exempt, // used only when the user types the rate (taxManual)
+    taxManual: false,
+    // The tax calculator (calc.taxOn): who the user is, for the credit points.
+    taxCalc: { gender: GENDER, sole: true, salary: null, soldier: 0, kidsSmall: 0, kidsBig: 0, reserve: false, single: false, degree: 0, oleh: 0 },
     annualGoal: null, // stage 3; null = 12 x the monthly goal
     mix: null, // null = the shark's suggestion
     assumptions: clone(DEFAULT_ASSUMPTIONS),

@@ -7,7 +7,7 @@ import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, FINANCE_URL, FINANCE_SCENAR
 import { cashText } from './parts.js';
 import {
   fmt, num, monthYear, todayText, todayAvg, runway, fixedMonthly, setupSummary, cushionTarget, setAsideMonthly,
-  paidProducts, netPrice, perHour, isLicensed,
+  paidProducts, netPrice, perHour, isLicensed, taxPctOf,
 } from './calc.js';
 import { ForecastChart, ForecastLegend } from './chart.js';
 import { Checks, Verdict, Quarters } from './plan.js';
@@ -62,7 +62,7 @@ export function DocScreen({ s, m }) {
       <table class="w-full text-[15px]"><tbody>
         <${Row} k="נשאר לך בכל חודש" v=${fmt(s.goal)} strong />
         <${Row} k="בשנה" v=${fmt(fc.annualGoal)} />
-        <${Row} k=${`הפרשה למס (${ent})`} v=${`${s.taxPct}% מההכנסות`} />
+        <${Row} k="מס וביטוח לאומי" v=${`${taxPctOf(s)}% מהרווח (${ent})`} />
         ${s.stage === 'active' && html`<${Row} k="כרית ביטחון" v=${`${fmt(cushionTarget(s))}${setAsideMonthly(s) ? ` · ${fmt(setAsideMonthly(s))} בחודש` : ' · מלאה'}`} />`}
       </tbody></table>
       ${s.stage === 'active' && html`<div class="mt-3"><${Quarters} fc=${fc} /></div>`}

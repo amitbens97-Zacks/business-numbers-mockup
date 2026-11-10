@@ -4,11 +4,11 @@ import { html, useState, Icon, cx } from './lib.js';
 import { Button, Note, StepHeading, PartnerNote, FillButton, SharkAvatar, How, CalcLines } from './components.js';
 import { Chips, Field, inputCls, Tag, Sheet } from './ui.js';
 import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
-import { Money, Stepper, Section, Result } from './parts.js';
+import { Money, Stepper, Section, Result, YesNo } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
+  paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
 // ---------- part 3: the goal ----------
@@ -38,18 +38,13 @@ export function GoalScreen({ s, up, m }) {
       <//>`}
     <//>
 
-    <${Section} title="סוג העוסק" sub="קובע כמה מכל מכירה נשאר לך, וכמה לשים בצד למס.">
-      <div class="grid gap-4 md:grid-cols-[1fr_220px]">
-        <div>
-          <${Chips} options=${ENTITIES} value=${s.entity} onChange=${(v) => up((d) => ((d.entity = v), (d.taxPct = SETTINGS.taxPct[v])))} />
-          <p class="mt-2 text-[14px] text-muted">${s.entity === 'exempt' ? `עוסק פטור לא גובה מע"מ, עד תקרה של ${fmt(SETTINGS.exemptCeiling)} בשנה.` : `עוסק מורשה גובה מע"מ: מכל מחיר בסל ${SETTINGS.vatPct}% עוברים למדינה.`}</p>
-          ${s.entity === 'exempt' && yearToday > SETTINGS.exemptCeiling && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-warn-50 p-2.5 text-[14px] font-semibold text-warn"><${Icon} name="triangle-alert" size=${17} />בקצב של היום ההכנסה בשנה היא ${fmt(yearToday)}, מעל התקרה. כדאי לבדוק עם רואה החשבון מעבר לעוסק מורשה.</p>`}
-        </div>
-        <${Field} class="!mb-0" label="הפרשה למס" hint="הערכה, לא ייעוץ מס. ברירת המחדל לפי סוג העוסק">
-          <${Money} suffix="%" label="הפרשה למס" value=${s.taxPct} onChange=${(v) => up((d) => (d.taxPct = Math.min(60, v ?? 0)))} />
-        <//>
-      </div>
+    <${Section} title="סוג העוסק" sub=${'קובע כמה מכל מכירה נכנס לעסק, ומה עובר למע"מ.'}>
+      <${Chips} options=${ENTITIES} value=${s.entity} onChange=${(v) => up((d) => ((d.entity = v), (d.taxPct = SETTINGS.taxPct[v])))} />
+      <p class="mt-2 text-[14px] text-muted">${s.entity === 'exempt' ? `עוסק פטור לא גובה מע"מ, עד תקרה של ${fmt(SETTINGS.exemptCeiling)} בשנה.` : `עוסק מורשה גובה מע"מ: מכל מחיר בסל ${SETTINGS.vatPct}% עוברים למדינה.`}</p>
+      ${s.entity === 'exempt' && yearToday > SETTINGS.exemptCeiling && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-warn-50 p-2.5 text-[14px] font-semibold text-warn"><${Icon} name="triangle-alert" size=${17} />בקצב של היום ההכנסה בשנה היא ${fmt(yearToday)}, מעל התקרה. כדאי לבדוק עם רואה החשבון מעבר לעוסק מורשה.</p>`}
     <//>
+
+    <${TaxCalc} s=${s} up=${up} />
 
     ${s.stage === 'active' &&
     html`<${Section} title="יעד שנתי, לפי רבעונים" sub="הרבעונים מחולקים לפי קצב הצמיחה בתחזית: בהתחלה פחות, בסוף השנה יותר.">
@@ -72,6 +67,98 @@ export function GoalScreen({ s, up, m }) {
             </div>`}
       <//>`}
   </div>`;
+}
+
+// ---------- the tax calculator ----------
+// The user fills what entitles them to credit points; the result is a clear rate: how much
+// of every shekel of profit goes to income tax and National Insurance, at the profit that
+// leaves the goal. The rate is used in parts 4-5. "I have a rate from my accountant" types it.
+const SOLDIER = [{ id: 0, label: 'לא' }, { id: 1, label: '12-21 חודשי שירות' }, { id: 2, label: '22 חודשים ומעלה' }];
+const DEGREE = [{ id: 0, label: 'לא' }, { id: 1, label: 'תואר ראשון' }, { id: 2, label: 'תואר שני או תעודת מקצוע' }];
+const OLEH = [{ id: 0, label: 'לא' }, { id: 1, label: 'עד שנה וחצי' }, { id: 2, label: 'עד שנתיים וחצי' }, { id: 3, label: 'עד שלוש שנים וחצי' }];
+const ptsText = (n) => (n === 1 ? 'נקודה אחת' : `${num(n, 2)} נקודות`);
+
+function Right({ title, hint, pts, children }) {
+  return html`<div class="rounded-xl bg-white p-3 ring-1 ring-line">
+    <p class="mb-2 flex items-baseline justify-between gap-2"><b class="text-[15px]">${title}</b>${pts > 0 && html`<span class="shrink-0 rounded-full bg-money-50 px-2 py-0.5 text-[12px] font-bold text-money">+${ptsText(pts)}</span>`}</p>
+    ${children}
+    ${hint && html`<p class="mt-1.5 text-[12px] text-muted">${hint}</p>`}
+  </div>`;
+}
+
+function TaxCalc({ s, up }) {
+  const c = s.taxCalc;
+  const set = (f, v) => up((d) => (d.taxCalc = { ...d.taxCalc, [f]: v }));
+  const r = taxAtGoal(s);
+  const pct = num(r.rate * 100, 1);
+  const pts = creditPoints(c);
+  const month = (x) => fmt(x / 12);
+  const manual = s.taxManual;
+  const toManual = () => up((d) => ((d.taxManual = true), (d.taxPct = Math.round(r.rate * 1000) / 10)));
+  const lines = [
+    ['רווח לפני מס בשנה', fmt(r.P)],
+    r.salary > 0 && ['המשכורת שלך בשנה (העסק מתחיל מהמדרגה שהיא מסיימת)', fmt(r.salary)],
+    ['מס הכנסה לפי המדרגות', fmt(-r.gross)],
+    r.gross - r.incomeTax > 0 && [`פחות ${ptsText(pts.total)} זיכוי (${fmt(TAX_2026.point)} לנקודה)${r.salary > 0 ? ', מה שהמשכורת לא ניצלה' : ''}`, fmt(r.gross - r.incomeTax)],
+    r.salary > 0 && r.gross - r.incomeTax <= 0 && ['נקודות הזיכוי כבר מנוצלות במס על המשכורת', fmt(0)],
+    ['ביטוח לאומי ובריאות', fmt(-r.ni)],
+    r.niMin > 0 && ['פחות המינימום שכבר בהוצאות הקבועות', fmt(Math.min(r.ni, r.niMin))],
+    ['ביחד מס וביטוח לאומי בשנה', fmt(-r.total), true],
+    ['נשאר לך בשנה', fmt(r.P - r.total)],
+    [`${fmt(r.total)} ÷ ${fmt(r.P)}`, `${pct}%`, true],
+  ].filter(Boolean);
+  return html`<${Section} title="כמה מס ${g('תשלם', 'תשלמי')}?" sub="המס משתנה מאדם לאדם. ${g('מלא', 'מלאי')} את מה שנכון לגביך, והמחשבון יחשב את האחוז שלך.">
+    ${manual
+      ? html`<div class="mb-4 flex flex-wrap items-end gap-4 rounded-2xl border-[1.5px] border-brand-300 bg-brand-50 p-4">
+          <${Field} class="!mb-0 w-[200px]" label="האחוז מרואה החשבון" hint="מהרווח, מס וביטוח לאומי ביחד">
+            <${Money} suffix="%" label="אחוז מס" value=${s.taxPct} onChange=${(v) => up((d) => (d.taxPct = Math.min(60, v ?? 0)))} />
+          <//>
+          <button type="button" class="mb-6 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => up((d) => (d.taxManual = false))}>לחזור למחשבון (${pct}%)</button>
+        </div>`
+      : html`<div class="rise mb-4 rounded-2xl border-[1.5px] border-brand-300 bg-brand-50 p-4 md:p-5" role="status">
+          <p class="text-[14px] font-bold text-muted">מכל שקל של רווח, למס ולביטוח הלאומי ${g('תעביר', 'תעבירי')}</p>
+          <p class="font-display text-[34px] font-black leading-tight text-brand-600 tabular-nums md:text-[40px]">${pct}%</p>
+          <p class="mt-1 text-[15px]">כדי שיישארו לך <b>${fmt(s.goal || 0)}</b> בחודש, העסק צריך להרוויח <b>${month(r.P)}</b> בחודש לפני מס. מזה <b>${month(r.incomeTax)}</b> מס הכנסה ו-<b>${month(r.niNet)}</b> ביטוח לאומי${r.niMin > 0 ? ' (מעבר למינימום שכבר בהוצאות)' : ''}.</p>
+          <${How} class="mt-2"><${CalcLines} lines=${lines} note="האחוז הוא ממוצע על כל הרווח: המדרגות עולות ככל שמרוויחים יותר, ונקודות הזיכוי מורידות מהמס." /><//>
+        </div>`}
+
+    <div class="grid gap-3 md:grid-cols-2">
+      <${Right} title="מי ${g('אתה', 'את')}?" hint="הבסיס של כל תושב: גבר 2.25 נקודות, אישה 2.75." pts=${c.gender === 'f' ? 2.75 : 2.25}>
+        <${Chips} small options=${[{ id: 'm', label: 'גבר' }, { id: 'f', label: 'אישה' }]} value=${c.gender} onChange=${(v) => set('gender', v)} />
+      <//>
+      <${Right} title="העסק הוא ההכנסה היחידה שלך?" hint=${c.sole === false ? 'המשכורת כבר משתמשת במדרגות הנמוכות, אז העסק מתחיל ממדרגה גבוהה יותר.' : 'אם יש גם משכורת, המס על העסק גבוה יותר.'}>
+        <${YesNo} value=${c.sole !== false} onChange=${(v) => set('sole', v)} />
+        ${c.sole === false && html`<div class="mt-2 max-w-[220px]"><${Field} class="!mb-0" label="משכורת חודשית ברוטו"><${Money} label="משכורת חודשית" value=${c.salary} onChange=${(v) => set('salary', v)} /><//></div>`}
+      <//>
+      <${Right} title="ילדים עד גיל 18" hint="עד גיל 6: נקודה וחצי לכל ילד. מגיל 6 עד 17: נקודה." pts=${(c.kidsSmall || 0) * 1.5 + (c.kidsBig || 0)}>
+        <div class="flex flex-wrap gap-x-5 gap-y-2 text-[14px]">
+          <span class="flex items-center gap-2">עד גיל 6 <${Stepper} label="ילדים עד גיל 6" value=${c.kidsSmall || 0} onChange=${(v) => set('kidsSmall', v)} /></span>
+          <span class="flex items-center gap-2">6 עד 17 <${Stepper} label="ילדים מגיל 6 עד 17" value=${c.kidsBig || 0} onChange=${(v) => set('kidsBig', v)} /></span>
+        </div>
+      <//>
+      <${Right} title=${`${g('השתחררת', 'השתחררת')} מצה"ל או משירות לאומי ב-3 השנים האחרונות?`} hint="22 חודשי שירות ומעלה: 2 נקודות. 12 עד 21 חודשים: נקודה." pts=${[0, 1, 2][c.soldier || 0]}>
+        <${Chips} small options=${SOLDIER} value=${c.soldier || 0} onChange=${(v) => set('soldier', v)} />
+      <//>
+      <${Right} title="סיימת תואר או לימודי מקצוע לאחרונה?" hint="תואר ראשון ב-3 השנים האחרונות: נקודה. תואר שני או תעודת מקצוע ב-2 השנים האחרונות: חצי." pts=${[0, 1, 0.5][c.degree || 0]}>
+        <${Chips} small options=${DEGREE} value=${c.degree || 0} onChange=${(v) => set('degree', v)} />
+      <//>
+      <${Right} title=${`${g('עלית', 'עלית')} לארץ ב-3.5 השנים האחרונות?`} hint="בשנה וחצי הראשונות 3 נקודות, בשנה שאחריה 2, ובשנה שאחריה נקודה." pts=${[0, 3, 2, 1][c.oleh || 0]}>
+        <${Chips} small options=${OLEH} value=${c.oleh || 0} onChange=${(v) => set('oleh', v)} />
+      <//>
+      <${Right} title=${`${g('משרת', 'משרתת')} במילואים פעילים?`} hint="חצי נקודה." pts=${c.reserve ? 0.5 : 0}>
+        <${YesNo} value=${!!c.reserve} onChange=${(v) => set('reserve', v)} />
+      <//>
+      <${Right} title=${`${g('הורה יחיד, או משלם', 'הורה יחידה, או משלמת')} מזונות?`} hint="נקודה." pts=${c.single ? 1 : 0}>
+        <${YesNo} value=${!!c.single} onChange=${(v) => set('single', v)} />
+      <//>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+      <p class="text-[14px]"><b>${ptsText(pts.total)} זיכוי</b> = ${fmt(pts.total * TAX_2026.point)} פחות מס בשנה.</p>
+      ${!manual && html`<button type="button" class="text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${toManual}>יש לך אחוז מרואה החשבון? להזין אותו</button>`}
+    </div>
+    <p class="mt-2 text-[12px] text-muted">הערכה לפי מדרגות המס של 2026, לא ייעוץ מס. החישוב שמרני: הפקדות לפנסיה ולקרן השתלמות ועוד זיכויים יכולים להוריד את המס בפועל.</p>
+  <//>`;
 }
 
 function Quarters({ fc }) {
@@ -111,7 +198,7 @@ function Assumptions({ s, up }) {
         <span class="text-[13px] text-muted">${means}</span>
       </label>`)}
     </div>
-    <p class="mt-3 text-[13px] text-muted">לפי החוק היום: מע"מ ${SETTINGS.vatPct}%, תקרת עוסק פטור ${fmt(SETTINGS.exemptCeiling)} בשנה. הפרשה למס ${s.taxPct}%, כמו שקבעת בחלק 3.</p>
+    <p class="mt-3 text-[13px] text-muted">לפי החוק היום: מע"מ ${SETTINGS.vatPct}%, תקרת עוסק פטור ${fmt(SETTINGS.exemptCeiling)} בשנה. מס וביטוח לאומי ${taxPctOf(s)}% מהרווח, כמו שיצא בחלק 3.</p>
   <//>`;
 }
 
@@ -164,16 +251,16 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך 5 · ${PARTS[3]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מהיעד אחורה: כמה העסק צריך להכניס, מאיזה מוצרים, וכמה לידים ושיחות זה אומר." />
     <${Result} icon="calculator" title=${`כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס`} big=${`${fmt(st.needed)} בחודש`}>
-      <span class="block text-[14px]">היעד, ועוד כל ההוצאות, ועוד ההפרשה למס.</span>
+      <span class="block text-[14px]">היעד, ועוד המס עליו, ועוד כל ההוצאות.</span>
       <${How}><${CalcLines}
         lines=${[
           ['היעד: מה שנשאר לך', fmt(s.goal)],
+          st.setAside > 0 && ['+ לכרית הביטחון', fmt(st.setAside)],
+          [`÷ ${num(100 - taxPctOf(s), 1)}% (${taxPctOf(s)}% מהרווח הולכים למס)`, fmt(st.beforeTax), true],
           ['+ הוצאות קבועות', fmt(st.fixedBase)],
           st.fixedGrow > 0 && ['+ העלייה בפרסום ובכלים כשהעסק גדל', fmt(st.fixedGrow)],
           ['+ עלויות המוצרים', fmt(st.cogs)],
-          st.setAside > 0 && ['+ לכרית הביטחון', fmt(st.setAside)],
-          ['ביחד', fmt(s.goal + st.fixed + st.cogs + st.setAside), true],
-          [`÷ ${100 - s.taxPct}% (${s.taxPct}% מכל שקל הולכים למס)`, fmt(st.needed), true],
+          ['ביחד', fmt(st.needed), true],
           isLicensed(s) && ['עם המע"מ, הלקוחות משלמים', fmt(st.needed * (1 + SETTINGS.vatPct / 100))],
         ]}
       /><//>
@@ -247,7 +334,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
             ['עלויות המוצרים', st.cogs],
             ['הוצאות קבועות', st.fixedBase],
             st.fixedGrow > 0 && ['עלייה בפרסום ובכלים', st.fixedGrow],
-            [`הפרשה למס (${s.taxPct}%)`, st.tax],
+            [`מס וביטוח לאומי (${taxPctOf(s)}%)`, st.tax],
             st.setAside > 0 && ['לכרית הביטחון', st.setAside],
           ]
             .filter(Boolean)
