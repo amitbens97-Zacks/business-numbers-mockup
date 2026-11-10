@@ -188,10 +188,10 @@ export function PrimaryButton({ label, onClick, disabled, check }) {
 // ---------- Step heading, written straight on the page ----------
 
 // "איך זה חושב": a small button next to every explanation; the calculation opens under it.
-export function How({ children, class: cls = '', label = 'איך זה חושב' }) {
+export function How({ children, class: cls = '', label = 'איך זה חושב', icon = 'calculator' }) {
   const [open, setOpen] = useState(false);
   return html`<div class=${cls}>
-    <button type="button" aria-expanded=${open} class="inline-flex h-7 items-center gap-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setOpen(!open)}><${Icon} name=${open ? 'chevron-up' : 'calculator'} size=${13} />${label}</button>
+    <button type="button" aria-expanded=${open} class="inline-flex h-7 items-center gap-1 text-[12px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setOpen(!open)}><${Icon} name=${open ? 'chevron-up' : icon} size=${13} />${label}</button>
     ${open && html`<div class="rise mt-1 rounded-lg bg-white/80 px-2.5 py-1.5 text-[13px] ring-1 ring-line">${children}</div>`}
   </div>`;
 }

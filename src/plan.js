@@ -8,7 +8,7 @@ import { Money, Stepper, Section, Result } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText,
+  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, PACE, SCENARIO_KEYS,
 } from './calc.js';
 
 // ---------- part 3: the goal ----------
@@ -91,17 +91,27 @@ function Quarters({ fc }) {
 
 function Assumptions({ s, up }) {
   const a = s.assumptions;
-  const row = (key, label, hint, suffix) => html`<${Field} class="!mb-0" label=${label} hint=${hint}>
-    <${Money} suffix=${suffix} label=${label} invalid=${a[key] == null} value=${a[key]} onChange=${(v) => up((d) => (d.assumptions[key] = v))} />
-  <//>`;
-  return html`<${Section} title="על מה החישוב מבוסס" sub="ארבעה מספרים שכל החלק הזה יוצא מהם. אפשר לשנות כל אחד, וכל המסך מתעדכן." aside=${html`<${Tag}><${Icon} name="pencil" size=${12} />אפשר לשנות<//>`}>
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      ${row('hoursMonth', 'שעות בחודש לעבודה עם לקוחות', a.hoursMonth ? `מה שכתבת ב"אני והעסק": בערך ${num((a.hoursMonth * 12) / 52)} שעות בשבוע` : 'כמה שעות בחודש יש לך ללקוחות', 'שעות')}
-      ${row('leadToCall', 'כמה מהפניות קובעות שיחה', 'ממוצע בתחום, עד שיהיו לך נתונים משלך', '%')}
-      ${row('closeRate', 'כמה מהשיחות נגמרות בקנייה', 'ממוצע בתחום, עד שיהיו לך נתונים משלך', '%')}
-      ${row('stayMonths', 'כמה זמן לקוח חודשי נשאר', 'בממוצע בתחום', 'חודשים')}
+  const monthly = paidProducts(s).find((p) => p.kind === 'monthly');
+  const of10 = (pct) => num((pct || 0) / 10, 1);
+  const cards = [
+    ['clock', 'hoursMonth', 'שעות בחודש לעבודה עם לקוחות', 'שעות', null,
+      a.hoursMonth ? `בערך ${num((a.hoursMonth * 12) / 52)} שעות בשבוע, לעבודה עם לקוחות ולשיחות מכירה. מה שכתבת ב"אני והעסק".` : 'כמה שעות בחודש יש לך לעבודה עם לקוחות ולשיחות מכירה.'],
+    ['phone', 'leadToCall', 'כמה מהפניות קובעות שיחה', '%', 'ממוצע בתחום',
+      `מתוך 10 פניות, ${of10(a.leadToCall)} קובעות שיחת מכירה.`],
+    ['handshake', 'closeRate', 'כמה מהשיחות נגמרות בקנייה', '%', 'ממוצע בתחום',
+      `מתוך 10 שיחות מכירה, ${of10(a.closeRate)} נגמרות בקנייה.`],
+    monthly && ['repeat', 'stayMonths', 'כמה זמן לקוח חודשי נשאר', 'חודשים', 'ממוצע בתחום',
+      `לקוח ב${monthly.short || monthly.name} משלם בממוצע ${num(a.stayMonths)} חודשים, ואז עוזב.`],
+  ].filter(Boolean);
+  return html`<${Section} title="על מה החישוב מבוסס" sub="כל המספרים בחלק הזה יוצאים מכאן. אפשר לשנות כל אחד, והכל מתעדכן. את האחוזים כדאי לעדכן כשיש לך נתונים משלך.">
+    <div class="grid gap-3 sm:grid-cols-2">
+      ${cards.map(([icon, key, label, suffix, tag, means]) => html`<label key=${key} class="flex flex-col gap-2 rounded-xl border-[1.5px] border-line bg-white p-3">
+        <span class="flex items-center gap-2"><span class="fb-chip-ic h-8 w-8 shrink-0"><${Icon} name=${icon} size=${16} /></span><b class="min-w-0 flex-1 text-[15px] leading-tight">${label}</b>${tag && html`<${Tag}>${tag}<//>`}</span>
+        <${Money} suffix=${suffix} label=${label} invalid=${a[key] == null} value=${a[key]} onChange=${(v) => up((d) => (d.assumptions[key] = v))} />
+        <span class="text-[13px] text-muted">${means}</span>
+      </label>`)}
     </div>
-    <p class="mt-3 text-[13px] text-muted">מע"מ ${SETTINGS.vatPct}% ותקרת עוסק פטור ${fmt(SETTINGS.exemptCeiling)} בשנה, לפי החוק היום. הפרשה למס: ${s.taxPct}%, כמו שקבעת בחלק 3.</p>
+    <p class="mt-3 text-[13px] text-muted">לפי החוק היום: מע"מ ${SETTINGS.vatPct}%, תקרת עוסק פטור ${fmt(SETTINGS.exemptCeiling)} בשנה. הפרשה למס ${s.taxPct}%, כמו שקבעת בחלק 3.</p>
   <//>`;
 }
 
@@ -189,20 +199,23 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
               </li>`;
             })}
           </ul>
-          ${monthly &&
-          (mix[monthly.id] || 0) > 0 &&
-          html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-canvas p-2.5 text-[14px]"><${Icon} name="repeat" size=${17} class="mt-0.5 shrink-0 text-brand-600" />${mix[monthly.id] === 1 ? 'לקוח פעיל אחד' : `${mix[monthly.id]} לקוחות פעילים`} ב${monthly.short} = ${num(mix[monthly.id] / a.stayMonths, 1)} חדשים בחודש. הם נערמים: מי שהצטרף בחודש שעבר עדיין משלם, אז כל לקוח חדש מוסיף הכנסה לכמה חודשים.</p>`}
-          ${program && (mix[program.id] || 0) > 0 && html`<p class="mt-2 flex items-start gap-2 rounded-xl bg-canvas p-2.5 text-[14px]"><${Icon} name="calendar-range" size=${17} class="mt-0.5 shrink-0 text-brand-600" />${program.short}: ${num(program.hours)} שעות מתחלקות על ${program.months} חודשים, והתשלום לפי מה שבחרת בחלק 2.</p>`}
+          ${((monthly && (mix[monthly.id] || 0) > 0) || (program && (mix[program.id] || 0) > 0)) &&
+          html`<${How} class="mt-1">
+            ${monthly && (mix[monthly.id] || 0) > 0 && html`<p class="py-0.5">${mix[monthly.id] === 1 ? 'לקוח פעיל אחד' : `${mix[monthly.id]} לקוחות פעילים`} ב${monthly.short} = ${num(mix[monthly.id] / a.stayMonths, 1)} חדשים בחודש. הם נערמים: מי שהצטרף בחודש שעבר עדיין משלם, אז כל לקוח חדש מוסיף הכנסה לכמה חודשים.</p>`}
+            ${program && (mix[program.id] || 0) > 0 && html`<p class="py-0.5">${program.short}: ${num(program.hours)} שעות מתחלקות על ${program.months} חודשים, והתשלום לפי מה שבחרת בחלק 2.</p>`}
+          <//>`}
         <//>
 
         <${Section} title="מאיפה יגיעו הלקוחות" sub="מהיעד אחורה: כמה פניות צריכות להגיע אליך בכל חודש, כדי שמספיק מהן יהפכו ללקוחות.">
           <${Funnel} st=${st} a=${a} wk=${wk} />
-          <p class="mt-4 rounded-xl bg-canvas p-3 text-[14px]">
-            כדי לקבל <b>${num(st.newClients, 1)} לקוחות חדשים</b> בחודש, כש-${a.closeRate}% מהשיחות נגמרות בקנייה, צריך <b>${num(st.calls, st.calls < 10 ? 1 : 0)} שיחות מכירה</b>.
-            כש-${a.leadToCall}% מהפניות קובעות שיחה, צריך שיגיעו אליך <b>${num(st.leads)} פניות</b> בחודש.
-            ${avg ? html` היום מגיעים בממוצע ${clientsText(avg.clients)} חדשים בחודש.` : ''}
-          </p>
-          <${How} class="mt-1"><${CalcLines}
+          <div class="mt-3">
+          <${How}>
+            <p class="mb-1">
+              כדי לקבל <b>${num(st.newClients, 1)} לקוחות חדשים</b> בחודש, כש-${a.closeRate}% מהשיחות נגמרות בקנייה, צריך <b>${num(st.calls, st.calls < 10 ? 1 : 0)} שיחות מכירה</b>.
+              כש-${a.leadToCall}% מהפניות קובעות שיחה, צריך שיגיעו אליך <b>${num(st.leads)} פניות</b> בחודש.
+              ${avg ? html` היום מגיעים בממוצע ${clientsText(avg.clients)} חדשים בחודש.` : ''}
+            </p>
+            <${CalcLines}
             lines=${[
               ['לקוחות חדשים בחודש מלא', num(st.newClients, 1)],
               [`÷ ${a.closeRate}% מהשיחות קונות`, `${num(st.calls, 1)} שיחות`, true],
@@ -210,7 +223,10 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
             ]}
             note=${`לקוחות חדשים = מכירות בחודש${monthly && (mix[monthly.id] || 0) > 0 ? `, ובמנוי: לקוחות פעילים ÷ ${a.stayMonths} חודשים שלקוח נשאר בממוצע` : ''}. השבוע = החודש × 12 ÷ 52.`}
           /><//>
-          <p class="mt-2 text-[13px] text-muted">פנייה (ליד) = מי שהשאיר פרטים, שלח הודעה או ביקש לשמוע עוד. איך מביאים את הפניות: על זה עובדים בפרקים הבאים, בדף הנחיתה, במכונת התוכן ובלקוחות המשלמים.</p>
+          <${How} label="מה זה פנייה?" icon="circle-help">
+            <p>פנייה (ליד) = מי שהשאיר פרטים, שלח הודעה או ביקש לשמוע עוד. איך מביאים את הפניות: על זה עובדים בפרקים הבאים, בדף הנחיתה, במכונת התוכן ובלקוחות המשלמים.</p>
+          <//>
+          </div>
         <//>
         <${Assumptions} s=${s} up=${up} />
       </div>
@@ -284,22 +300,21 @@ function Checks({ list, how = true }) {
 
 // What the verdict rests on, in plain words, and what it does not check.
 function Basis({ s, m }) {
-  const ramp = m.fc.ramp;
   const a = s.assumptions;
   const items = [
     ['user', 'המספרים שלך', `הכסף בעסק, ההוצאות, המחירים, העלויות והשעות מחלקים 1-2, והיעד של ${fmt(s.goal)} בחודש מחלק 3.`],
     ['shopping-basket', 'התמהיל', `כמה מכל מוצר נמכר בחודש מלא (חלק 4). בחודש מלא העסק מכניס ${fmt(m.st.income)}.`],
     ['percent', 'שני אחוזים שאפשר לשנות', `${a.leadToCall}% מהפניות קובעות שיחה, ${a.closeRate}% מהשיחות קונות. ממוצע בתחום, עד שיהיו לך נתונים משלך (חלק 4).`],
-    ['trending-up', 'הדרך ליעד', `${ramp} חודשים עד חודש מלא${m.fc.rampByShark ? ', לפי הקצב (למעלה)' : ', כמו שבחרת'}. בכל חודש קצת יותר מכירות מהחודש שלפניו.`],
+    ['trending-up', 'הדרך ליעד', `התסריט הריאלי: ${PACE.real}% יותר לקוחות בכל חודש, הקצב הממוצע של עסק שמנוהל טוב. תוך ${m.fc.ramp} חודשים מגיעים לחודש מלא, ואחר כך ממשיכים לגדול עד שהשעות מתמלאות.`],
   ];
   return html`<details class="fb-panel mb-5 !p-4">
     <summary class="cursor-pointer text-[16px] font-bold">על מה הבדיקה מבוססת</summary>
-    <p class="mb-3 mt-1 text-[14px] text-muted">אין כאן ניחוש: כל מספר מחושב מהנתונים האלה, באותו חישוב בכל פעם.</p>
+    <p class="mb-3 mt-1 text-[14px] text-muted">אין כאן ניחוש: כל מספר מחושב מהנתונים האלה, באותו חישוב בכל פעם. הבדיקות לפי התסריט הריאלי.</p>
     <ul class="grid gap-3 md:grid-cols-2">
       ${items.map(([icon, k, v]) => html`<li key=${k} class="flex items-start gap-3"><span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${icon} size=${17} /></span><span class="text-[14px]"><b class="block text-[15px]">${k}</b>${v}</span></li>`)}
     </ul>
     <div class="mt-4 grid gap-3 border-t border-line pt-4 md:grid-cols-2">
-      <p class="text-[14px]"><b class="block text-[15px]">איך נקבעת השורה התחתונה</b>אדום באחת משלוש הבדיקות הראשונות: "יש בעיה במודל". כתום באחת מהן, או קצב גבוה: "אפשרי, עם שינוי". הכל ירוק: "המודל עובד".</p>
+      <p class="text-[14px]"><b class="block text-[15px]">איך נקבעת השורה התחתונה</b>אדום באחת משלוש הבדיקות הראשונות: "יש בעיה במודל". כתום באחת מהן, או שהדרך לחודש מלא לוקחת יותר משנה: "אפשרי, עם שינוי". הכל ירוק: "המודל עובד".</p>
       <p class="text-[14px]"><b class="block text-[15px]">מה הבדיקה לא יודעת</b>אם הפניות באמת יגיעו. היא בודקת שהמספרים מסתדרים אם הן מגיעות. להביא אותן זה השיווק, ועליו עובדים בפרקים הבאים.</p>
     </div>
   </details>`;
@@ -357,25 +372,70 @@ function SharkChat({ m, onClose }) {
   <//>`;
 }
 
-// How long to the full month, and why: the shark's pace (calc.rampPlan), in one sentence.
-function rampWhy(s, fc) {
+// The three scenarios: same start, same equation (calc.rampPlan), only the pace changes.
+const SCEN = {
+  real: { label: 'ריאלי', icon: 'target', on: 'border-brand-600 bg-brand-50', text: 'text-brand-600',
+    line: (g) => `הבסיס של התוכנית: עסק שמנוהל טוב גדל בממוצע עד ${g}% יותר לקוחות בכל חודש.` },
+  low: { label: 'פסימי', icon: 'trending-down', on: 'border-warn bg-warn-50', text: 'text-warn',
+    line: (g) => `אם המכירות גדלות לאט יותר ממה שחשבנו: רק ${g}% יותר לקוחות בכל חודש.` },
+  high: { label: 'אופטימי', icon: 'trending-up', on: 'border-money bg-money-50', text: 'text-money',
+    line: (g) => `אם הולך מעל הציפיות: ${g}% יותר לקוחות בכל חודש.` },
+};
+const inMonths = (n) => (n === 1 ? 'חודש אחד' : n === 2 ? 'חודשיים' : `${n} חודשים`);
+
+function ScenarioTabs({ all, value, onChange }) {
+  return html`<div role="tablist" aria-label="תסריט" class="mb-3 grid grid-cols-3 gap-2">
+    ${SCENARIO_KEYS.map((k) => {
+      const x = SCEN[k];
+      const fc = all[k];
+      const sel = value === k;
+      return html`<button key=${k} type="button" role="tab" aria-selected=${sel} class=${cx('flex flex-col items-start rounded-xl border-[1.5px] p-2.5 text-start transition cursor-pointer', sel ? x.on : 'border-line bg-white hover:border-brand-300')} onClick=${() => onChange(k)}>
+        <span class=${cx('flex items-center gap-1 text-[14px] font-bold', sel ? x.text : 'text-ink')}><${Icon} name=${x.icon} size=${15} />${x.label}</span>
+        <span class="whitespace-nowrap font-display text-[16px] font-black leading-tight tabular-nums sm:text-[19px]">${fc.ramp <= 12 ? inMonths(fc.ramp) : 'יותר משנה'}</span>
+        <span class="text-[12px] text-muted">${fc.plan.grow}% בכל חודש</span>
+      </button>`;
+    })}
+  </div>`;
+}
+
+// The why of one scenario, under "איך זה חושב": the full month, the sentence, the lines.
+function ScenarioHow({ s, fc }) {
   const p = fc.plan;
   const need = clientsText(p.need);
-  if (!fc.rampByShark) return `בחרת ${fc.ramp} חודשים. לפי הקצב, הכריש היה ממליץ על ${p.months}.`;
-  if (!p.fresh && p.ratio <= 1) return `כבר היום מגיעים מספיק לקוחות חדשים (${need} בחודש). ${p.months} חודשים כדי למלא את כל התמהיל.`;
-  if (!p.fresh) return `היום ${Math.round(p.from * 10) === 10 ? 'מגיע לקוח חדש אחד' : `מגיעים ${clientsText(p.from)} חדשים`} בחודש, ובחודש מלא צריך ${need}. עסק יכול לגדול בקצב בריא של עד ${p.grow}% יותר לקוחות חדשים בכל חודש, וככה זה ${p.months} חודשים${p.raw > 12 ? ' (12 הוא המקסימום)' : p.raw < 3 ? ' (3 הוא המינימום)' : ''}.`;
-  return `מתחילים מלקוח ראשון, ובחודש מלא צריך ${need} חדשים בחודש. עסק חדש יכול לגדול עד ${p.grow}% יותר לקוחות בכל חודש, וככה זה ${p.months} חודשים${p.raw > 12 ? ' (12 הוא המקסימום)' : p.raw < 3 ? ' (3 הוא המינימום)' : ''}.`;
+  const pace = fc.key === 'real' ? `עסק ${p.fresh ? 'חדש ' : ''}שמנוהל טוב גדל בממוצע עד ${p.grow}% יותר לקוחות בכל חודש` : `בתסריט ה${SCEN[fc.key].label}: ${p.grow}% יותר לקוחות בכל חודש`;
+  const when = `וככה זה ${inMonths(fc.ramp)}${fc.ramp > 12 ? ', יותר מהשנה שבתחזית' : ''}`;
+  const why = p.fresh
+    ? `מתחילים מלקוח ראשון, ובחודש מלא צריך ${need} חדשים בחודש. ${pace}, ${when}.`
+    : p.ratio <= 1
+      ? `כבר היום מגיעים מספיק לקוחות חדשים (${need} בחודש), אז החודש המלא כבר כאן.`
+      : `היום ${Math.round(p.from * 10) === 10 ? 'מגיע לקוח חדש אחד' : `מגיעים ${clientsText(p.from)} חדשים`} בחודש, ובחודש מלא צריך ${need}. ${pace}, ${when}.`;
+  const after = p.cap > 1.01
+    ? `אחרי שמגיעים: ממשיכים לגדול באותו קצב, עד שהשעות שלך מתמלאות (${num(s.assumptions.hoursMonth)} שעות בחודש). שם המכירות נעצרות.`
+    : 'אחרי שמגיעים: השעות שלך כבר כמעט מלאות, אז המכירות נשארות בגובה של חודש מלא.';
+  return html`<${How} class="mb-2">
+    <p class="mb-1">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(fc.st.income)} בחודש.</p>
+    <p class="mb-1">${why}</p>
+    <${CalcLines}
+      lines=${p.fresh
+        ? [['לקוחות חדשים שצריך בחודש מלא', num(p.need, 1)], ['בחודש הראשון', 'לקוח אחד'], [`ועוד ${p.grow}% בכל חודש`, `${num(p.raw, 1)} חודשים`], ['מעוגל למעלה', inMonths(fc.ramp), true]]
+        : [['לקוחות חדשים בחודש היום', num(p.from, 1)], ['צריך בחודש מלא', num(p.need, 1)], ['פי', num(Math.max(1, p.ratio), 1)], [`ועוד ${p.grow}% בכל חודש`, `${num(Math.max(0, p.raw), 1)} חודשים`], ['מעוגל למעלה', inMonths(fc.ramp), true]]}
+      note=${`בכל חודש: הלקוחות החדשים של החודש הקודם × ${num(1 + p.grow / 100, 1)}, עד שמגיעים ל-${num(p.need, 1)}. ${after}`}
+    />
+  <//>`;
 }
 
 export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
   const [table, setTable] = useState(false);
   const [chat, setChat] = useState(false);
-  const fc = m.fc;
+  const [scen, setScen] = useState('real');
+  const all = { real: m.fc, low: forecast(s, m.mix, 'low'), high: forecast(s, m.mix, 'high') };
+  const fc = all[scen];
   const list = fixes(s);
-  const ceiling = fc.ceilingMonth != null ? fc.rows[fc.ceilingMonth] : null;
+  const ceiling = m.fc.ceilingMonth != null ? m.fc.rows[m.fc.ceilingMonth] : null;
   const yearOk = fc.yearProfit >= fc.annualGoal;
-  const reach = fc.rows[Math.min(fc.ramp, fc.rows.length) - 1];
-  const opts = [{ id: 'auto', label: `${fc.plan.months} חודשים (הכריש)` }, ...[3, 6, 9, 12].filter((n) => n !== fc.plan.months).map((n) => ({ id: n, label: `${n} חודשים` }))];
+  const reach = fc.reachIdx >= 0 ? fc.rows[fc.reachIdx] : null;
+  const low = fc.minRow;
+  const cashOk = low.cash >= 0;
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 5 מתוך 5 · ${PARTS[4]}`} title=${['השנה ', 'הקרובה', ' במספרים']} sub="תחזית לשנים-עשר החודשים הבאים, ובדיקה אם המודל מחזיק." />
 
@@ -390,25 +450,22 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
         ].map(([v, label, icon]) => html`<button key=${label} type="button" role="tab" aria-selected=${table === v} class=${cx('flex h-8 items-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-bold cursor-pointer', table === v ? 'bg-brand-600 text-white' : 'text-muted')} onClick=${() => setTable(v)}><${Icon} name=${icon} size=${15} />${label}</button>`)}
       </div>`}
     >
-      <p class="font-display text-[24px] font-black leading-tight">תוך ${fc.ramp} חודשים${reach ? html`<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : ''}</p>
-      <p class="mb-1 text-[14px]">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(m.st.income)} בחודש.</p>
-      <p class="text-[14px] text-muted">${rampWhy(s, fc)}</p>
-      <${How} class="mb-3"><${CalcLines}
-        lines=${fc.plan.fresh
-          ? [['לקוחות חדשים שצריך בחודש מלא', num(fc.plan.need, 1)], ['מתחילים מ', 'לקוח אחד'], [`גדלים עד ${fc.plan.grow}% בכל חודש`, `${num(fc.plan.raw, 1)} חודשים`], ['מעוגל, בין 3 ל-12', `${fc.plan.months} חודשים`, true]]
-          : [['לקוחות חדשים בחודש היום', num(fc.plan.from, 1)], ['צריך בחודש מלא', num(fc.plan.need, 1)], ['פי', num(fc.plan.ratio, 1)], [`גדלים עד ${fc.plan.grow}% בכל חודש`, `${num(Math.max(0, fc.plan.raw), 1)} חודשים`], ['מעוגל, בין 3 ל-12', `${fc.plan.months} חודשים`, true]]}
-        note=${fc.plan.fresh ? 'חודשים = 1 + ln(צריך) ÷ ln(1.2). עסק חדש גדל מהר יותר מבסיס קטן.' : 'חודשים = ln(צריך ÷ היום) ÷ ln(1.1). 10% בחודש זה הקו הירוק של בדיקת הקצב.'}
-      /><//>
-      <div class="mb-4 flex flex-wrap items-center gap-2"><span class="text-[13px] font-bold text-muted">לשנות:</span><${Chips} small options=${opts} value=${s.ramp ?? 'auto'} onChange=${(v) => up((d) => (d.ramp = v === 'auto' ? null : v))} /></div>
+      <${ScenarioTabs} all=${all} value=${scen} onChange=${setScen} />
+      <p class="text-[14px] text-muted">${SCEN[scen].line(fc.plan.grow)}</p>
+      <p class="mt-1 font-display text-[24px] font-black leading-tight">${reach ? html`תוך ${inMonths(fc.ramp)}<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : html`לא בשנה הקרובה<span class="text-[17px] font-bold text-muted"> · בערך ${inMonths(fc.ramp)}</span>`}</p>
+      <${ScenarioHow} s=${s} fc=${fc} />
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
-      <p class=${cx('mt-4 rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}>בשנה הקרובה יישאר לך <b class="tabular-nums">${fmt(fc.yearProfit)}</b>, מול יעד שנתי של ${fmt(fc.annualGoal)}: <b class=${yearOk ? 'text-money' : 'text-warn'}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b>. <span class="text-muted">כולל החודשים עד שמגיעים ליעד.</span></p>
+      <div class="mt-4 grid gap-2 sm:grid-cols-2">
+        <p class=${cx('rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}><span class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</span><b class="font-display text-[20px] tabular-nums">${fmt(fc.yearProfit)}</b> <span class="text-[14px]">מול יעד של ${fmt(fc.annualGoal)}:</span> <b class=${cx('text-[14px]', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b></p>
+        <p class=${cx('rounded-xl p-3 text-[15px]', cashOk ? 'bg-money-50' : 'bg-error-50')}><span class="block text-[13px] font-bold text-muted">הכסף בעסק, בנקודה הכי נמוכה</span><b class=${cx('font-display text-[20px] tabular-nums', !cashOk && 'text-error')}>${fmt(low.cash)}</b> <span class="text-[14px]">ב${monthYear(low.key)}${cashOk ? ', לא נכנסים למינוס' : ', העסק במינוס'}</span></p>
+      </div>
       <${How} class="mt-1"><${CalcLines}
         lines=${[
           ['מה שנשאר בכל חודש, 12 חודשים ביחד', fmt(fc.yearProfit), true],
           [`היעד: ${fmt(s.goal)} × 12`, fmt(fc.annualGoal)],
           [yearOk ? 'מעל היעד' : 'חסר ליעד', fmt(Math.abs(fc.yearProfit - fc.annualGoal)), true],
         ]}
-        note="בכל חודש: הכנסות, פחות הוצאות קבועות, עלויות המוצרים ומס. בחודשים הראשונים המכירות עוד גדלות, ולכן נשאר פחות."
+        note="בכל חודש: הכנסות, פחות הוצאות קבועות, עלויות המוצרים ומס. כולל החודשים עד שמגיעים ליעד, שבהם המכירות עוד גדלות ונשאר פחות."
       /><//>
       ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
     <//>

@@ -290,7 +290,6 @@ function base(extra) {
     annualGoal: null, // stage 3; null = 12 x the monthly goal
     mix: null, // null = the shark's suggestion
     assumptions: clone(DEFAULT_ASSUMPTIONS),
-    ramp: null, // months to the full month; null = the shark's, from the pace (calc.rampPlan)
     applied: [],
     done: false,
     doneOn: null,
