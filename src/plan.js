@@ -168,7 +168,8 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
       <${How}><${CalcLines}
         lines=${[
           ['היעד: מה שנשאר לך', fmt(s.goal)],
-          ['+ הוצאות קבועות', fmt(st.fixed)],
+          ['+ הוצאות קבועות', fmt(st.fixedBase)],
+          st.fixedGrow > 0 && ['+ העלייה בפרסום ובכלים כשהעסק גדל', fmt(st.fixedGrow)],
           ['+ עלויות המוצרים', fmt(st.cogs)],
           st.setAside > 0 && ['+ לכרית הביטחון', fmt(st.setAside)],
           ['ביחד', fmt(s.goal + st.fixed + st.cogs + st.setAside), true],
@@ -244,7 +245,8 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
           <li class="flex justify-between py-1 font-bold"><span>נכנס מהמכירות</span><span class="tabular-nums">${fmt(st.income)}</span></li>
           ${[
             ['עלויות המוצרים', st.cogs],
-            ['הוצאות קבועות', st.fixed],
+            ['הוצאות קבועות', st.fixedBase],
+            st.fixedGrow > 0 && ['עלייה בפרסום ובכלים', st.fixedGrow],
             [`הפרשה למס (${s.taxPct}%)`, st.tax],
             st.setAside > 0 && ['לכרית הביטחון', st.setAside],
           ]
@@ -400,48 +402,79 @@ function ScenarioTabs({ s, all, value, onChange }) {
   </div>`;
 }
 
-// The equation of the selected scenario, in plain words, with its four numbers editable.
-const FIELDS = [
-  ['start', 'קצב הצמיחה בהתחלה', '%', 'כמה יותר לקוחות מהחודש שלפני'],
-  ['slow', 'בכל חודש הקצב יורד ב-', '%', 'מהקצב של החודש הקודם'],
-  ['dip', 'בחודש חלש המכירות יורדות ב-', '%', 'פסח, החופש הגדול, חגי תשרי'],
-  ['delay', 'חודשים עד שהצמיחה מתחילה', 'חודשים', 'זמן התארגנות, בלי צמיחה'],
-];
+// The equation of the selected scenario: closed behind a clear button. Open, it shows the
+// shape of the year (a small bar per month) and the building blocks, each one editable.
+function GrowthStrip({ fc }) {
+  const rows = fc.rows;
+  const top = Math.max(1.15, ...rows.map((r) => r.f)) * 1.08;
+  const H = 96;
+  return html`<div class="rounded-xl bg-white p-3 ring-1 ring-line">
+    <div class="relative flex items-end gap-1" style=${{ height: `${H}px` }}>
+      <span class="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-brand-300" style=${{ bottom: `${(1 / top) * H}px` }}></span>
+      <span class="pointer-events-none absolute end-0 -translate-y-full rounded bg-white px-1 text-[11px] font-bold text-brand-600" style=${{ bottom: `${(1 / top) * H}px` }}>חודש מלא</span>
+      ${rows.map((r, i) => {
+        const weak = weakIn([r]).length > 0;
+        return html`<div key=${r.key} class="flex flex-1 flex-col items-center justify-end" style=${{ height: '100%' }} title=${`${monthName(r.key)}: ${num(r.f * 100)}% מחודש מלא${weak ? ' (חודש חלש)' : ''}`}>
+          <div class=${cx('w-full rounded-t-md transition-all', weak ? 'bg-warn/70' : r.f >= 1 - 1e-9 ? 'bg-brand-600' : 'bg-brand-300')} style=${{ height: `${Math.max(2, (r.f / top) * H)}px` }}></div>
+        </div>`;
+      })}
+    </div>
+    <div class="mt-1 flex gap-1">${rows.map((r) => html`<span key=${r.key} class="flex-1 text-center text-[10px] text-muted">${monthName(r.key).slice(0, 3)}</span>`)}</div>
+    <p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted">
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-sm bg-brand-300"></span>בדרך לחודש מלא</span>
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-sm bg-brand-600"></span>חודש מלא ומעליו</span>
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-sm bg-warn/70"></span>חודש חלש</span>
+    </p>
+  </div>`;
+}
+
 function Equation({ s, up, fc, notify }) {
+  const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const key = fc.key;
   const P = paceOf(s, key);
   const p = fc.plan;
   const pct = (x) => `${num(x * 100, 1)}%`;
-  const weak = weakIn(fc.rows).map(([k, why]) => `${monthName(k)} (${why})`).join(', ');
+  const weak = weakIn(fc.rows).map(([, why]) => why).join(', ');
   const set = (f, v) => up((d) => (d.pace = { ...(d.pace || {}), [key]: { ...paceOf(d, key), [f]: v ?? 0 } }));
   const reset = () => { up((d) => { const x = { ...(d.pace || {}) }; delete x[key]; d.pace = x; }); notify(`חזרת למשוואה המקורית של התסריט ה${SCEN[key].label}`, 'rotate-ccw'); };
-  const steps = [
-    ['flag', p.fresh
-      ? `${P.delay > 0 ? `${inMonths(P.delay)} של התארגנות, ואז ` : ''}לקוח ראשון${P.delay > 0 ? '' : ' כבר בחודש הראשון'}.`
-      : `מתחילים מהיום: ${clientsText(p.from)} חדשים בחודש${P.delay > 0 ? `, בלי שינוי ב${inMonths(P.delay)} הראשונים` : ''}.`],
-    ['trending-up', `כל חודש יותר לקוחות מהחודש שלפניו. הקצב מתחיל ב-${P.start}% ויורד בכל חודש ב-${P.slow}% מעצמו: אחרי חצי שנה ${pct(growAt(P, 7))}, אחרי שנה ${pct(growAt(P, 13))}.`],
-    ['calendar-x', `בחודשים חלשים המכירות יורדות ב-${P.dip}% וחוזרות בחודש שאחרי${weak ? `: ${weak}` : ''}.`],
-    ['clock', p.cap > 1.01 ? `התקרה: השעות שלך (${num(s.assumptions.hoursMonth)} בחודש). כשהן מלאות, המכירות נעצרות.` : 'התקרה: השעות שלך כבר כמעט מלאות בחודש מלא, אז מעליו כמעט אין לאן לגדול.'],
+  const edited = paceEdited(s, key);
+  // [field, icon, shown value, title, what it means, unit, max]
+  const blocks = [
+    ['delay', 'flag', P.delay ? inMonths(P.delay) : 'מיד', 'מתי מתחילים לגדול', p.fresh ? (P.delay ? 'זמן התארגנות, ואז הלקוח הראשון' : 'הלקוח הראשון כבר בחודש הראשון') : P.delay ? 'בלי צמיחה בהתחלה, ואז גדלים' : 'מתחילים לגדול כבר בחודש הראשון', 'חודשים', 6],
+    ['start', 'trending-up', `${P.start}%`, 'קצב צמיחה בהתחלה', 'כמה יותר לקוחות מהחודש שלפני', '%', 100],
+    ['slow', 'gauge', `${P.slow}%`, 'בכל חודש הקצב יורד ב-', `אחרי חצי שנה ${pct(growAt(P, 7))} בחודש, אחרי שנה ${pct(growAt(P, 13))}`, '%', 100],
+    ['dip', 'calendar-x', `${P.dip}%`, 'בחודש חלש המכירות יורדות ב-', `${weak || 'פסח, החופש הגדול, חגי תשרי'}. חוזרים בחודש שאחרי`, '%', 100],
+    ['cost', 'receipt', `${P.cost}%`, 'פרסום וכלים עולים בחודש מלא ב-', fc.st.fixedGrow > 0 ? `עוד ${fmt(fc.st.fixedGrow)} בחודש: יותר פניות, יותר מנויים` : 'עוד אין הוצאות פרסום או כלים', '%', 200],
+    [null, 'clock', `${num(s.assumptions.hoursMonth)} שעות`, 'התקרה', p.cap > 1.01 ? 'השעות שלך בחודש. כשהן מלאות, המכירות נעצרות' : 'השעות כמעט מלאות כבר בחודש מלא', '', 0],
   ];
-  return html`<div class="mb-3 rounded-xl border border-line bg-canvas p-3">
-    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
-      <b class="text-[14px]">המשוואה של התסריט ה${SCEN[key].label}</b>
-      <span class="flex items-center gap-3">
-        ${paceEdited(s, key) && html`<button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${reset}>להחזיר למקור</button>`}
-        <button type="button" aria-expanded=${edit} class="inline-flex items-center gap-1 text-[13px] font-bold text-brand-600 cursor-pointer" onClick=${() => setEdit(!edit)}><${Icon} name=${edit ? 'chevron-up' : 'pencil'} size=${14} />${edit ? 'סגירה' : 'לערוך'}</button>
-      </span>
-    </div>
-    <ol class="flex flex-col gap-1.5 text-[14px]">
-      ${steps.map(([icon, text]) => html`<li key=${icon} class="flex items-start gap-2"><${Icon} name=${icon} size=${16} class="mt-0.5 shrink-0 text-brand-600" /><span>${text}</span></li>`)}
-    </ol>
-    ${edit && html`<div class="rise mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-2">
-      ${FIELDS.map(([f, label, suffix, hint]) => html`<label key=${f} class="flex flex-col gap-1 rounded-lg bg-white p-2.5 ring-1 ring-line">
-        <span class="flex items-baseline justify-between gap-2 text-[13px] font-bold">${label}<small class="font-semibold text-muted">במקור ${PACE_DEFAULT[key][f]}</small></span>
-        <${Money} suffix=${suffix} label=${label} value=${P[f]} onChange=${(v) => set(f, Math.min(f === 'delay' ? 6 : 100, v ?? 0))} />
-        <span class="text-[12px] text-muted">${hint}</span>
-      </label>`)}
-      <p class="text-[12px] text-muted sm:col-span-2">השינוי עובר מיד לגרף ולמספרים.${key === 'real' ? ' התסריט הריאלי הוא הבסיס של הבדיקות, אז גם הן מתעדכנות.' : ''}</p>
+  return html`<div class="mb-3">
+    <button type="button" aria-expanded=${open} class=${cx('flex w-full items-center gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-start transition cursor-pointer', open ? 'border-brand-600 bg-brand-50' : 'border-brand-300 bg-white hover:border-brand-600')} onClick=${() => setOpen(!open)}>
+      <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name="sigma" size=${18} /></span>
+      <span class="min-w-0 flex-1"><b class="block text-[15px] text-brand-600">המשוואה של התסריט ה${SCEN[key].label}</b><small class="text-[13px] text-muted">${edited ? 'ערכת אותה · ' : ''}איך בנויה השנה, ואפשר לשנות כל מספר</small></span>
+      <${Icon} name=${open ? 'chevron-up' : 'chevron-down'} size=${20} class="shrink-0 text-brand-600" />
+    </button>
+    ${open && html`<div class="rise mt-2 rounded-xl border border-line bg-canvas p-3">
+      <p class="mb-2 text-[14px]">כל חודש מחושב מהחודש שלפניו: <b>יותר לקוחות, בקצב שהולך ומאט</b>, עם ירידה בחודשים חלשים, עד שהשעות שלך מתמלאות. ככה נראית השנה:</p>
+      <${GrowthStrip} fc=${fc} />
+      <div class="mb-2 mt-3 flex flex-wrap items-center justify-between gap-2">
+        <b class="text-[14px]">המספרים של המשוואה</b>
+        <span class="flex items-center gap-3">
+          ${edited && html`<button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${reset}>להחזיר למקור</button>`}
+          <${Button} variant="mini" onClick=${() => setEdit(!edit)}><${Icon} name=${edit ? 'check' : 'pencil'} size=${14} />${edit ? 'סיום עריכה' : 'לערוך את המספרים'}<//>
+        </span>
+      </div>
+      <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        ${blocks.map(([f, icon, shown, title, means, unit, max]) => html`<li key=${title} class=${cx('flex flex-col gap-1 rounded-xl bg-white p-2.5 ring-1', f && edit ? 'ring-brand-300' : 'ring-line')}>
+          <span class="flex items-center gap-1.5 text-[12px] font-bold text-muted"><${Icon} name=${icon} size=${14} class="shrink-0 text-brand-600" />${title}</span>
+          ${f && edit
+            ? html`<${Money} suffix=${unit} label=${title} value=${P[f]} onChange=${(v) => set(f, Math.min(max, v ?? 0))} />
+                <small class="text-[11px] text-muted">במקור ${PACE_DEFAULT[key][f]}${unit === '%' ? '%' : ''}</small>`
+            : html`<b class="font-display text-[22px] font-black leading-none tabular-nums">${shown}</b>`}
+          <span class="text-[12px] leading-snug text-muted">${means}</span>
+        </li>`)}
+      </ul>
+      ${edit && html`<p class="mt-2 text-[12px] text-muted">כל שינוי עובר מיד לגרף, לבדיקות ולשורה התחתונה של התסריט הזה.${key === 'real' ? ' התסריט הריאלי הוא גם הבסיס של הסיכום ושל "כמה צריך למכור".' : ''}</p>`}
     </div>`}
   </div>`;
 }
@@ -506,7 +539,7 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
           [`היעד: ${fmt(s.goal)} × 12`, fmt(fc.annualGoal)],
           [yearOk ? 'מעל היעד' : 'חסר ליעד', fmt(Math.abs(fc.yearProfit - fc.annualGoal)), true],
         ]}
-        note="בכל חודש: הכנסות, פחות הוצאות קבועות, עלויות המוצרים ומס. כולל החודשים עד שמגיעים ליעד, שבהם המכירות עוד גדלות ונשאר פחות."
+        note="בכל חודש: הכנסות, פחות הוצאות קבועות (פרסום וכלים עולים יחד עם העסק), עלויות המוצרים ומס. כולל החודשים עד שמגיעים ליעד, שבהם המכירות עוד גדלות ונשאר פחות."
       /><//>
       ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
     <//>

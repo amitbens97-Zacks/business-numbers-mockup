@@ -53,7 +53,12 @@ export const monthlyCost = (x) => (x.freq === 'weekly' ? (x.amount * 52) / 12 : 
 // The forecast month (0-11) an expense starts in.
 export const startIndex = (x) => (!x.start || x.start === 'now' ? 0 : Math.max(0, FORECAST_MONTHS.indexOf(x.start)));
 export const fixedMonthly = (s) => s.expenses.reduce((t, x) => t + monthlyCost(x), 0);
+// The fixed expenses that grow with the business: advertising (more leads) and tools
+// (more seats, bigger plans). Accountant, insurance, FlowBiz and the like stay as they are.
+export const GROWS = ['marketing', 'tools'];
+export const growingMonthly = (s) => s.expenses.filter((x) => GROWS.includes(x.category)).reduce((t, x) => t + monthlyCost(x), 0);
 const fixedIn = (s, i) => s.expenses.reduce((t, x) => t + (i >= startIndex(x) ? monthlyCost(x) : 0), 0);
+const growingIn = (s, i) => s.expenses.filter((x) => GROWS.includes(x.category)).reduce((t, x) => t + (i >= startIndex(x) ? monthlyCost(x) : 0), 0);
 
 // ---------- setup (the finance center's budget table) ----------
 // Each item: planned, paid so far, and "paid in full". The budget (stage 1 only) that is
@@ -143,10 +148,12 @@ export function setAsideMonthly(s) {
 
 // ---------- a regular month ----------
 
-export function steady(s, mix) {
+// key = the scenario: in a full month the growing expenses are cost% higher than today.
+export function steady(s, mix, key = 'real') {
   const a = s.assumptions;
   const t = taxRate(s);
-  const fixed = fixedMonthly(s);
+  const fixedGrow = growingMonthly(s) * ((paceOf(s, key).cost || 0) / 100);
+  const fixed = fixedMonthly(s) + fixedGrow;
   const setAside = setAsideMonthly(s);
   let income = 0;
   let gross = 0;
@@ -174,7 +181,7 @@ export function steady(s, mix) {
   const needed = (goal + fixed + cogs + setAside) / (1 - t);
   const hours = work + callH;
   return {
-    income, gross, vat: gross - income, cogs, fixed, tax, profit, setAside, needed,
+    income, gross, vat: gross - income, cogs, fixed, fixedGrow, fixedBase: fixed - fixedGrow, tax, profit, setAside, needed,
     work, callH, hours, newClients, calls, leads, rows,
     perHour: work > 0 ? (income - cogs) / work : 0,
   };
@@ -217,14 +224,17 @@ export const isSharkMix = (s) => !s.mix;
 //   3. Weak months: in the months of Passover, the summer break and the Tishrei holidays,
 //      sales are dip% lower, and come back the month after (the trend goes on underneath).
 //   4. A ceiling: never more than the hours the user has (hours available ÷ full-month hours).
+//   5. Expenses grow too: advertising and tools are cost% higher in the full month, and in
+//      between they move with the trend: extra(m) = growing × cost% × (trend(m) - t0) / (1 - t0),
+//      t0 = the start level. Past the full month they keep rising with the trend.
 //   level(m) = min(ceiling, trend(m)) × (weak month ? 1 - dip% : 1), where trend(m) =
 //   trend(m-1) × (1 + g(k)). 1 = the full month (the whole mix). The full month arrives in
 //   the first month the level reaches 1. The user can edit the four numbers of every
 //   scenario (s.pace); the checks, verdict, fixes and summary use the realistic one.
 export const PACE_DEFAULT = {
-  real: { start: 25, slow: 4, dip: 20, delay: 0 },
-  low: { start: 15, slow: 6, dip: 30, delay: 1 },
-  high: { start: 35, slow: 4, dip: 10, delay: 0 },
+  real: { start: 25, slow: 4, dip: 20, delay: 0, cost: 20 },
+  low: { start: 15, slow: 6, dip: 30, delay: 1, cost: 30 },
+  high: { start: 35, slow: 4, dip: 10, delay: 0, cost: 15 },
 };
 export const SCENARIO_KEYS = ['real', 'low', 'high'];
 export const SCEN_NAME = { real: 'הריאלי', low: 'הפסימי', high: 'האופטימי' };
@@ -247,6 +257,7 @@ export function rampPlan(s, st, key = 'real') {
   const start = need > 0 ? Math.min(1, from / need) : 1;
   const delay = Math.max(0, Math.round(P.delay || 0));
   const levels = [fresh ? 0 : Math.min(cap, start)];
+  const trends = [fresh ? 0 : Math.min(cap, start)];
   let trend = fresh ? 0 : start;
   let k = 0;
   let months = null;
@@ -258,15 +269,18 @@ export function rampPlan(s, st, key = 'real') {
     const weak = WEAK[monthNum(m)];
     const lvl = Math.min(cap, trend) * (weak ? 1 - (P.dip || 0) / 100 : 1);
     levels.push(lvl);
+    trends.push(Math.min(cap, trend));
     if (months == null && lvl >= 1 - 1e-9) months = m;
   }
   const ratio = need > 0 ? need / from : 1;
-  return { key, P, months, from, need, ratio, fresh, cap, start, delay, level: (m) => levels[Math.min(m, HORIZON)] };
+  // How far the business has grown from its start, for the expenses: 0 at the start, 1 at the full month.
+  const grown = (m) => (start >= 1 ? 0 : Math.max(0, (trends[Math.min(m, HORIZON)] - start) / (1 - start)));
+  return { key, P, months, from, need, ratio, fresh, cap, start, delay, level: (m) => levels[Math.min(m, HORIZON)], trend: (m) => trends[Math.min(m, HORIZON)], grown };
 }
 export const weakIn = (rows) => rows.map((r) => WEAK[Number(r.key.split('-')[1])] && [r.key, WEAK[Number(r.key.split('-')[1])]]).filter(Boolean);
 
 export function forecast(s, mix, key = 'real') {
-  const st = steady(s, mix);
+  const st = steady(s, mix, key);
   const t = taxRate(s);
   const plan = rampPlan(s, st, key);
   const ramp = plan.months;
@@ -325,7 +339,8 @@ export function forecast(s, mix, key = 'real') {
   let ceilingMonth = null;
   for (let i = 0; i < 12; i++) {
     const income = incomeAt[i];
-    const fixed = fixedIn(s, i);
+    const grow = growingIn(s, i) * ((plan.P.cost || 0) / 100) * plan.grown(i + 1);
+    const fixed = fixedIn(s, i) + grow;
     const tax = income * t;
     const profit = income - cogsAt[i] - fixed - tax;
     const keep = Math.min(aside, Math.max(0, profit), st.setAside || 0);
@@ -334,7 +349,7 @@ export function forecast(s, mix, key = 'real') {
     cash += profit - draw - (i === 0 ? setupLeft : 0);
     yearGross += grossAt[i];
     if (ceilingMonth == null && !isLicensed(s) && yearGross > SETTINGS.exemptCeiling) ceilingMonth = i;
-    rows.push({ key: FORECAST_MONTHS[i], f: f(i + 1), income, gross: grossAt[i], vat: grossAt[i] - income, cogs: cogsAt[i], fixed, tax, profit, draw, keep, cash });
+    rows.push({ key: FORECAST_MONTHS[i], f: f(i + 1), grow, income, gross: grossAt[i], vat: grossAt[i] - income, cogs: cogsAt[i], fixed, tax, profit, draw, keep, cash });
   }
   const goalIdx = rows.findIndex((r) => r.profit >= goal);
   const minRow = rows.reduce((m, r) => (r.cash < m.cash ? r : m), rows[0]);
@@ -370,7 +385,8 @@ export function checks(s, mix, fc) {
   const goalHow = [
     ['הכנסות בחודש מלא (כל התמהיל)', fmt(st.income)],
     ['פחות עלויות המוצרים', fmt(-st.cogs)],
-    ['פחות הוצאות קבועות', fmt(-st.fixed)],
+    ['פחות הוצאות קבועות', fmt(-st.fixedBase)],
+    st.fixedGrow > 0 && [`פחות העלייה בפרסום ובכלים כשהעסק גדל (${paceOf(s, fc.key).cost}%)`, fmt(-st.fixedGrow)],
     [`פחות הפרשה למס (${s.taxPct}%)`, fmt(-st.tax)],
     st.setAside > 0 && ['פחות לכרית הביטחון', fmt(-st.setAside)],
     ['נשאר לך', fmt(st.profit - st.setAside), true],
