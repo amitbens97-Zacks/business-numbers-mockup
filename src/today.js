@@ -227,7 +227,7 @@ function SetupTable({ s, up }) {
     <${SetupMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
-      items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !mustSetupFor(s).some((y) => y.name === x.name))}
+      items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !(mustReady(s, s.stage === 'setup' ? 'setup' : 'setupDone') && mustSetupFor(s).some((y) => y.name === x.name)))}
       label=${(x) => x.shown || fmt(x.planned)}
       onAdd=${(x) => add(x.flowbiz ? { name: x.name, icon: x.icon, flowbiz: true, value: x.value, planned: null, spent: 0 } : { name: x.name, icon: x.icon, planned: x.planned })}
     />
@@ -270,11 +270,15 @@ function expFit(s, x) {
   return { ok: false, before, after, drop: best && best.rw.months - after.months >= 0.25 ? best : null };
 }
 
-function MustHave({ items, children }) {
+// Shown only once the user has finished filling the section (pressed "המשך" once): the
+// first press with a must-have missing keeps the section open and brings up this box.
+const mustReady = (s, id) => (s.seen || []).includes(id);
+function MustHave({ id, items, children }) {
   if (!items.length) return null;
-  return html`<div class="mt-4 rounded-xl border-[1.5px] border-warn/40 bg-warn-50 p-3">
-    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-alert-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש: חסר משהו שהעסק חייב</p>
+  return html`<div id=${id} class="rise mt-4 scroll-mt-24 rounded-xl border-[1.5px] border-warn/40 bg-warn-50 p-3">
+    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-alert-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש: לפני שממשיכים, חסר משהו שהעסק חייב</p>
     <ul class="flex flex-col gap-2">${children}</ul>
+    <p class="mt-2 text-[12px] text-muted">אפשר גם להמשיך בלי זה, ולחזור לכאן אחר כך.</p>
   </div>`;
 }
 const mustBtn = 'inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-bold cursor-pointer';
@@ -290,9 +294,9 @@ function MustRow({ x, amount, why, actions }) {
 }
 
 function SetupMust({ s, up }) {
-  const list = mustSetupFor(s);
+  const list = mustReady(s, s.stage === 'setup' ? 'setup' : 'setupDone') ? mustSetupFor(s) : [];
   const addIt = (d, x) => d.setup.push({ id: nextId('s'), name: x.name, icon: x.icon, planned: x.planned, spent: 0, done: false });
-  return html`<${MustHave} items=${list}>
+  return html`<${MustHave} id="must-setup" items=${list}>
     ${list.map((x) => {
       const fit = setupFit(s, x);
       if (fit.ok)
@@ -315,9 +319,9 @@ function SetupMust({ s, up }) {
 }
 
 function ExpensesMust({ s, up }) {
-  const list = mustExpensesFor(s);
+  const list = mustReady(s, 'expenses') ? mustExpensesFor(s) : [];
   const addIt = (d, x) => d.expenses.push({ id: nextId('x'), start: 'now', ...plainOf(x) });
-  return html`<${MustHave} items=${list}>
+  return html`<${MustHave} id="must-expenses" items=${list}>
     ${list.map((x) => {
       const fit = expFit(s, x);
       const amount = `${fmt(x.amount)} ${per(x.freq)}`;
@@ -405,7 +409,7 @@ function ExpensesTable({ s, up }) {
     <${ExpensesMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
-      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !mustExpensesFor(s).some((y) => y.name === x.name) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
+      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !(mustReady(s, 'expenses') && mustExpensesFor(s).some((y) => y.name === x.name)) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
       label=${(x) => x.shown || `${fmt(x.amount)} ${per(x.freq)}`}
       onAdd=${addSuggestion}
     />
@@ -777,10 +781,17 @@ export function TodayScreen({ s, up, onStage }) {
     if (open) setTimeout(() => document.getElementById(`sec-${open}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   }, [open]);
   const next = (sec, i) => {
+    // The first "המשך" with a must-have missing: stay here and show the shark's box.
+    const must = sec.id === 'setup' || (sec.id === 'setupDone' && s.setupDone === false) ? mustSetupFor(s) : sec.id === 'expenses' ? mustExpensesFor(s) : [];
+    const stay = must.length > 0 && !seen.has(sec.id);
     up((d) => {
       if (!d.seen.includes(sec.id)) d.seen.push(sec.id);
       sec.onNext?.(d);
     });
+    if (stay) {
+      setTimeout(() => document.getElementById(sec.id === 'expenses' ? 'must-expenses' : 'must-setup')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+      return;
+    }
     const after = secs.slice(i + 1).find((x) => !seen.has(x.id)) || secs[i + 1];
     setOpen(after ? after.id : null);
     if (!after) setTimeout(() => document.getElementById('today-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
