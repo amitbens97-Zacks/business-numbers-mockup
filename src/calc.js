@@ -642,22 +642,49 @@ const freeze = (s) => ({ ...s, mix: mixOf(s), applied: s.applied });
 // A fix as data (d): what it changes. applyFix makes the new state; withPicks starts from the
 // state before any fix (fixBase: only the fields fixes change) and adds the picked ones, so the
 // user can pick a few, and take any one back. More hours goes first: it re-runs the mix.
+// Hours: the user answers a week, the math runs a month (a week x 52 / 12).
+export const monthOfWeek = (w) => (w == null ? null : Math.round(((w * 52) / 12) * 10) / 10);
+export const weekOf = (a) => a.hoursWeek ?? (a.hoursMonth ? Math.round(((a.hoursMonth * 12) / 52) * 2) / 2 : null);
+const withWeek = (a, w) => ({ ...a, hoursWeek: w, hoursMonth: monthOfWeek(w) });
+
+// What the user can change in each fix: the field in d, its label and unit.
+export const FIX_EDIT = {
+  price: { key: 'to', label: 'מחיר חדש', suffix: '₪', step: 50 },
+  monthly: { key: 'n', label: 'כמה לקוחות חודשיים', suffix: 'לקוחות', step: 1 },
+  hours: { key: 'add', label: 'כמה שעות להוסיף בשבוע', suffix: 'שעות', step: 1 },
+  goal: { key: 'to', label: 'היעד לשנה הראשונה', suffix: '₪', step: 500 },
+  'cash-in': { key: 'amt', label: 'כמה להכניס', suffix: '₪', step: 500 },
+};
+// The title of a fix, from its data (so an edited fix reads right).
+export function fixTitle(s, d) {
+  const p = (id) => s.products.find((x) => x.id === id) || {};
+  const short = (id) => p(id).short || p(id).name || '';
+  switch (d.id) {
+    case 'price': return `להעלות את ${short(d.pid)} ל-${fmt(d.to)}`;
+    case 'monthly': return (d.n || 1) === 1 ? `עוד לקוח אחד ב${short(d.pid)}` : `עוד ${num(d.n)} לקוחות ב${short(d.pid)}`;
+    case 'hours': return `עוד ${num(d.add)} שעות בשבוע לעבודה עם לקוחות`;
+    case 'goal': return `יעד של ${fmt(d.to)} בחודש לשנה הראשונה`;
+    case 'cash-in': return `להכניס לעסק ${fmt(d.amt)} מראש`;
+    default: return d.title;
+  }
+}
+
 export function applyFix(x, d) {
   const mixed = (fn) => { const m = { ...mixOf(x) }; fn(m); return { ...x, mix: m }; };
   switch (d.id) {
     case 'price': return { ...freeze(x), products: x.products.map((p) => (p.id === d.pid ? { ...p, price: d.to } : p)) };
     case 'shift': return mixed((m) => { m[d.from] = Math.max(0, (m[d.from] || 0) - 1); m[d.to] = (m[d.to] || 0) + 1; });
-    case 'monthly': return mixed((m) => { m[d.pid] = (m[d.pid] || 0) + 1; });
-    case 'hours': return { ...x, mix: null, assumptions: { ...x.assumptions, hoursMonth: (x.assumptions.hoursMonth || 0) + d.add } };
+    case 'monthly': return mixed((m) => { m[d.pid] = (m[d.pid] || 0) + (d.n || 1); });
+    case 'hours': return { ...x, mix: null, assumptions: withWeek(x.assumptions, (weekOf(x.assumptions) || 0) + d.add) };
     case 'goal': return { ...freeze(x), goal: d.to };
     case 'cash-in': return { ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + d.amt } };
     case 'cut': return { ...freeze(x), expenses: x.expenses.filter((e) => e.id !== d.xid) };
     default: return x;
   }
 }
-export const fixBaseOf = (s) => JSON.parse(JSON.stringify({ products: s.products, mix: s.mix, hoursMonth: s.assumptions.hoursMonth, goal: s.goal, bank: s.bank, expenses: s.expenses }));
+export const fixBaseOf = (s) => JSON.parse(JSON.stringify({ products: s.products, mix: s.mix, hoursMonth: s.assumptions.hoursMonth, hoursWeek: weekOf(s.assumptions), goal: s.goal, bank: s.bank, expenses: s.expenses }));
 export function withPicks(s, base, picks) {
-  let x = { ...s, products: base.products, mix: base.mix, assumptions: { ...s.assumptions, hoursMonth: base.hoursMonth }, goal: base.goal, bank: base.bank, expenses: base.expenses };
+  let x = { ...s, products: base.products, mix: base.mix, assumptions: { ...s.assumptions, hoursMonth: base.hoursMonth, hoursWeek: base.hoursWeek }, goal: base.goal, bank: base.bank, expenses: base.expenses };
   for (const d of [...picks].sort((a, b) => (b.id === 'hours') - (a.id === 'hours'))) x = applyFix(x, d);
   return x;
 }
@@ -711,13 +738,13 @@ export function fixes(s, key = 'real') {
   }
 
   // More hours for client work.
-  if (byId.time.tone !== 'ok' || byId.goal.tone === 'bad') {
+  if (byId.time.tone !== 'ok' || byId.goal.tone !== 'ok') {
     c.push({
       id: 'hours',
       icon: 'clock',
       title: 'עוד 4 שעות בשבוע לעבודה עם לקוחות',
-      sub: `${num(s.assumptions.hoursMonth)} שעות בחודש יהיו ${num(s.assumptions.hoursMonth + 16)}. הכריש מחשב מחדש את התמהיל`,
-      d: { id: 'hours', add: 16 },
+      sub: `${num(weekOf(s.assumptions), 1)} שעות בשבוע יהיו ${num(weekOf(s.assumptions) + 4, 1)}. הכריש מחשב מחדש את התמהיל`,
+      d: { id: 'hours', add: 4 },
     });
   }
 
@@ -726,6 +753,11 @@ export function fixes(s, key = 'real') {
   if (byId.goal.tone === 'bad') {
     const to = Math.max(1000, Math.floor((now.st.profit - now.st.setAside) / 500) * 500);
     if (to < (s.goal || 0)) c.push({ id: 'goal', icon: 'target', title: `יעד של ${fmt(to)} בחודש לשנה הראשונה`, sub: `במקום ${fmt(s.goal)}. אפשר להעלות אותו כשהמספרים יגדלו`, d: { id: 'goal', to } });
+  } else if (byId.goal.tone === 'warn') {
+    // The full month is fine, it only comes after the first year: a goal the year reaches.
+    const last = now.fc.rows[now.fc.rows.length - 1];
+    const to = Math.max(1000, Math.floor(last.profit / 500) * 500);
+    if (to < (s.goal || 0)) c.push({ id: 'goal', icon: 'target', title: `יעד של ${fmt(to)} בחודש לשנה הראשונה`, sub: `במקום ${fmt(s.goal)}. לזה מגיעים בתוך השנה, ומשם ממשיכים לגדול`, d: { id: 'goal', to } });
   }
 
   // Short on cash for a while: put the missing money in up front, so the business never
@@ -766,16 +798,39 @@ export function fixes(s, key = 'real') {
     c.push({ id: 'cut', icon: 'scissors', title: `לוותר בינתיים על ${cut.name}`, sub: `חוסך ${fmt(monthlyCost(cut))} בחודש. אפשר להחזיר כשההכנסה מגיעה`, d: { id: 'cut', xid: cut.id } });
   }
 
+  // The shark looks for the number that really fixes it: the smallest raise, the fewest
+  // hours or clients that make the verdict better. If none does, it keeps its first offer.
+  const rank = { bad: 0, warn: 1, ok: 2 };
+  const ladder = {
+    hours: () => [2, 4, 6, 8, 10, 12, 15, 20].filter((a) => (weekOf(s.assumptions) || 0) + a <= 60),
+    price: (d) => { const p = s.products.find((x) => x.id === d.pid); return [10, 15, 20, 25, 30, 40].map((k) => round50(p.price * (1 + k / 100))); },
+    monthly: () => [1, 2, 3, 4],
+  };
+  const tune = (fx) => {
+    const L = ladder[fx.id];
+    if (!L) return fx;
+    const k = FIX_EDIT[fx.id].key;
+    const tones = L(fx.d).map((x) => [x, rank[model(applyFix(s, { ...fx.d, [k]: x }), key).verdict.tone]]);
+    const v = (tones.find(([, r]) => r === 2) || tones.find(([, r]) => r > rank[now.verdict.tone]) || [])[0];
+    if (v == null || v === fx.d[k]) return fx;
+    const d = { ...fx.d, [k]: v };
+    const wk = weekOf(s.assumptions) || 0;
+    const sub = fx.id === 'hours' ? `${num(wk, 1)} שעות בשבוע יהיו ${num(wk + v, 1)}. הכריש מחשב מחדש את התמהיל` : fx.sub;
+    return { ...fx, d, title: fixTitle(s, d), sub };
+  };
+
   return c
+    .map(tune)
     .map((fx) => ({ ...fx, d: { ...fx.d, title: fx.title, basket: !!fx.basket }, make: (x) => applyFix(x, fx.d) }))
     .map((fx) => {
       const after = model(fx.make(s), key);
       const gap = (m) => Math.max(0, (s.goal || 0) - m.st.profit);
+      const reach = (m) => (m.fc.goalIdx >= 0 ? m.fc.goalIdx : 13);
       // A lower goal is the last resort: it ranks after the fixes that change the business.
-      const impact = (after.score - now.score) * 10000 + (gap(now) - gap(after)) + (after.verdict.tone !== now.verdict.tone ? 50000 : 0) - (fx.id === 'goal' ? 45000 : 0) + (after.score > now.score ? fx.boost || 0 : 0);
+      const impact = (after.score - now.score) * 10000 + (gap(now) - gap(after)) + (reach(now) - reach(after)) * 1500 + (after.fc.yearProfit - now.fc.yearProfit) / 12 + (after.verdict.tone !== now.verdict.tone ? 50000 : 0) - (fx.id === 'goal' ? 45000 : 0) + (after.score > now.score ? fx.boost || 0 : 0);
       return { ...fx, before: now, after, impact };
     })
     .filter((fx) => fx.impact > 0)
     .sort((a, b) => b.impact - a.impact)
-    .slice(0, 3);
+    .slice(0, 4);
 }

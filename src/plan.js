@@ -7,7 +7,7 @@ import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
 import { Money, Stepper, Section, Result, YesNo } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
-  fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, overCeilingToday, asLicensed, fullYearGross, neededYear, netPrice,
+  fmt, num, monthName, monthYear, todayAvg, weekOf, monthOfWeek, FIX_EDIT, fixTitle, applyFix, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, overCeilingToday, asLicensed, fullYearGross, neededYear, netPrice,
   paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, KIDS, kidPoints, reservePoints, DEGREE_PTS, OLEH_PTS, SETTLE, fixes, withPicks, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
@@ -215,8 +215,6 @@ function Assumptions({ s, up }) {
   const monthly = paidProducts(s).find((p) => p.kind === 'monthly');
   const of10 = (pct) => num((pct || 0) / 10, 1);
   const cards = [
-    ['clock', 'hoursMonth', 'שעות בחודש לעבודה עם לקוחות', 'שעות', null,
-      a.hoursMonth ? `בערך ${num((a.hoursMonth * 12) / 52)} שעות בשבוע, לעבודה עם לקוחות ולשיחות מכירה. מה שכתבת ב"אני והעסק".` : 'כמה שעות בחודש יש לך לעבודה עם לקוחות ולשיחות מכירה.'],
     ['phone', 'leadToCall', 'כמה מהפניות קובעות שיחה', '%', 'ממוצע בתחום',
       `מתוך 10 פניות, ${of10(a.leadToCall)} קובעות שיחת מכירה.`],
     ['handshake', 'closeRate', 'כמה מהשיחות נגמרות בקנייה', '%', 'ממוצע בתחום',
@@ -224,7 +222,16 @@ function Assumptions({ s, up }) {
     monthly && ['repeat', 'stayMonths', 'כמה זמן לקוח חודשי נשאר', 'חודשים', 'ממוצע בתחום',
       `לקוח ב${monthly.short || monthly.name} משלם בממוצע ${num(a.stayMonths)} חודשים, ואז עוזב.`],
   ].filter(Boolean);
+  const wk = weekOf(a);
   return html`<${Section} title="על מה החישוב מבוסס" sub="כל המספרים בחלק הזה יוצאים מכאן. אפשר לשנות כל אחד, והכל מתעדכן. את האחוזים כדאי לעדכן כשיש לך נתונים משלך.">
+    <label class="mb-3 flex flex-col gap-2 rounded-xl border-[1.5px] border-brand-300 bg-brand-50 p-3 sm:p-4">
+      <span class="flex items-start gap-2"><span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name="clock" size=${18} /></span><b class="min-w-0 flex-1 text-[16px] leading-snug">כמה שעות בשבוע יש לך לעבודה עם לקוחות ולשיחות מכירה?</b>${!a.hoursEdited && wk != null && html`<${Tag}>מ"אני והעסק"<//>`}</span>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="w-40"><${Money} suffix="שעות" label="שעות בשבוע" invalid=${wk == null} value=${wk} onChange=${(v) => up((d) => { d.assumptions.hoursWeek = v; d.assumptions.hoursMonth = monthOfWeek(v); d.assumptions.hoursEdited = true; })} /></div>
+        ${wk != null && html`<span class="text-[14px] font-semibold">= ${num(a.hoursMonth)} שעות בחודש</span>`}
+      </div>
+      <span class="text-[13px] text-muted">${a.hoursEdited ? 'שינית כאן. כל החלק מחושב לפי המספר הזה.' : 'מה שמילאת ב"אני והעסק". אם השתנה משהו, אפשר לשנות כאן.'} רק שעות שאפשר לעבוד בהן עם לקוחות או לדבר עם לקוחות חדשים, בלי שיווק ואדמיניסטרציה.</span>
+    </label>
     <div class="grid gap-3 sm:grid-cols-2">
       ${cards.map(([icon, key, label, suffix, tag, means]) => html`<label key=${key} class="flex flex-col gap-2 rounded-xl border-[1.5px] border-line bg-white p-3">
         <span class="flex items-center gap-2"><span class="fb-chip-ic h-8 w-8 shrink-0"><${Icon} name=${icon} size=${16} /></span><b class="min-w-0 flex-1 text-[15px] leading-tight">${label}</b>${tag && html`<${Tag}>${tag}<//>`}</span>
@@ -455,24 +462,51 @@ function Verdict({ v, scen }) {
   </div>`;
 }
 
-function FixCard({ fx, picked, onApply }) {
-  return html`<li class=${cx('fb-panel flex flex-col gap-2 !p-4 transition', picked && '!border-brand-600 ring-2 ring-brand-300')}>
+// A fix the shark offers. The number in it (price, clients, hours, goal, sum) can change:
+// before adding, the card shows what the changed one does; once in the plan, the plan follows.
+function FixCard({ fx, pick, base, scen, onApply, onEdit }) {
+  const [draft, setDraft] = useState(null);
+  const [open, setOpen] = useState(false);
+  const ed = FIX_EDIT[fx.id];
+  const d0 = pick || draft || fx.d;
+  const d = { ...d0, title: fixTitle(base, d0) };
+  const changed = d[ed?.key] !== fx.d[ed?.key];
+  const after = changed ? model(applyFix(base, d), scen) : fx.after;
+  const set = (v) => {
+    if (v == null || v <= 0) return;
+    const nd = { ...d, [ed.key]: v };
+    nd.title = fixTitle(base, nd);
+    if (pick) onEdit(nd);
+    else setDraft(nd);
+  };
+  return html`<li class=${cx('fb-panel flex flex-col gap-2 !p-4 transition', pick && '!border-brand-600 ring-2 ring-brand-300')}>
     <div class="flex items-start gap-3">
       <span class="fb-chip-ic h-10 w-10 shrink-0"><${Icon} name=${fx.icon} size=${20} /></span>
       <div class="min-w-0 flex-1">
-        <b class="block text-[16px]">${fx.title}</b>
-        <small class="text-[13px] text-muted">${fx.sub}</small>
+        <b class="block text-[16px]">${d.title}</b>
+        <small class="text-[13px] text-muted">${changed ? `הכריש הציע: ${fx.title}` : fx.sub}</small>
       </div>
     </div>
+    ${ed && (open
+      ? html`<div class="flex flex-col gap-1.5 rounded-lg border-[1.5px] border-brand-300 bg-white p-2.5">
+          <span class="text-[13px] font-bold">${ed.label}</span>
+          <div class="flex items-center gap-2">
+            <button type="button" aria-label="פחות" class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border-[1.5px] border-line text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => set(Math.max(ed.step, d[ed.key] - ed.step))}><${Icon} name="minus" size=${16} /></button>
+            <div class="min-w-0 flex-1"><${Money} suffix=${ed.suffix} label=${ed.label} value=${d[ed.key]} onChange=${set} /></div>
+            <button type="button" aria-label="יותר" class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border-[1.5px] border-line text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => set(d[ed.key] + ed.step)}><${Icon} name="plus" size=${16} /></button>
+          </div>
+          <span class="flex items-center justify-between gap-2 text-[12px] text-muted">${pick ? 'התוכנית מתעדכנת עם כל שינוי.' : 'רואים למטה מה זה עושה, לפני שמוסיפים.'}<button type="button" class="font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setOpen(false)}>סגירה</button></span>
+        </div>`
+      : html`<button type="button" class="inline-flex items-center gap-1 self-start text-[13px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setOpen(true)}><${Icon} name="pencil" size=${13} />לשנות את המספר</button>`)}
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-3 py-2 text-[13px]">
       ${fx.before.checks.map(
-        (c, i) => html`<span key=${c.id} class="inline-flex items-center gap-1" title=${c.q}><${Dot} tone=${c.tone} /><${Icon} name="arrow-left" size=${12} class="text-faint" /><${Dot} tone=${fx.after.checks[i].tone} /><span class="text-muted">${c.q.replace('?', '')}</span></span>`,
+        (c, i) => html`<span key=${c.id} class="inline-flex items-center gap-1" title=${c.q}><${Dot} tone=${c.tone} /><${Icon} name="arrow-left" size=${12} class="text-faint" /><${Dot} tone=${after.checks[i].tone} /><span class="text-muted">${c.q.replace('?', '')}</span></span>`,
       )}
     </div>
-    <p class="text-[13px]">השינוי הזה לבד: <b class=${TONE[fx.after.verdict.tone].text}>${fx.after.verdict.title}</b> · נשאר בחודש מלא ${fmt(fx.after.st.profit - fx.after.st.setAside)}</p>
-    ${picked
-      ? html`<button type="button" aria-pressed="true" class="inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg bg-brand-600 px-3 py-1.5 text-[13px] font-bold text-white hover:bg-brand-700 cursor-pointer" onClick=${onApply}><${Icon} name="check" size=${14} />נבחר · לבטל</button>`
-      : html`<${Button} variant="mini" class="self-start" aria-pressed="false" onClick=${onApply}><${Icon} name="plus" size=${14} />להוסיף לתוכנית<//>`}
+    <p class="text-[13px]">השינוי הזה לבד: <b class=${TONE[after.verdict.tone].text}>${after.verdict.title}</b> · נשאר בחודש מלא ${fmt(after.st.profit - after.st.setAside)}</p>
+    ${pick
+      ? html`<button type="button" aria-pressed="true" class="inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg bg-brand-600 px-3 py-1.5 text-[13px] font-bold text-white hover:bg-brand-700 cursor-pointer" onClick=${() => { setDraft(null); onApply(d); }}><${Icon} name="check" size=${14} />נבחר · לבטל</button>`
+      : html`<${Button} variant="mini" class="self-start" aria-pressed="false" onClick=${() => onApply(d)}><${Icon} name="plus" size=${14} />להוסיף לתוכנית<//>`}
   </li>`;
 }
 
@@ -594,7 +628,7 @@ function ScenarioHow({ fc }) {
   <//>`;
 }
 
-export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onClearPicks }) {
+export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onEditPick, onClearPicks }) {
   const [table, setTable] = useState(false);
   const [chat, setChat] = useState(false);
   const [scen, setScen] = useState('real');
@@ -653,13 +687,13 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onClearPicks
     <${Section} title="הבדיקות" sub=${`לפי התסריט ${SCEN_NAME[scen]}. כשמחליפים תסריט למעלה, הבדיקות מתעדכנות.`}><${Checks} list=${mk.checks} /><//>
 
     ${list.length > 0 &&
-    html`<${Section} title="מה אפשר לשנות" sub=${`אפשר לבחור כמה שינויים יחד, ולבטל כל אחד מהם. מסודר לפי מה שמשפיע הכי הרבה בתסריט ${SCEN_NAME[scen]}.`}>
+    html`<${Section} title="מה אפשר לשנות" sub=${`הכריש מציע, ${g('אתה בוחר', 'את בוחרת')}: אפשר לבחור כמה שינויים יחד, לשנות את המספר בכל אחד, ולבטל. מסודר לפי מה שמשפיע הכי הרבה בתסריט ${SCEN_NAME[scen]}.`}>
       ${picks.length > 0 &&
       html`<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 p-3 text-[14px]">
         <p>${picks.length === 1 ? 'בחרת שינוי אחד' : `בחרת ${picks.length} שינויים`}. לפני: <b class=${TONE[baseVerdict.tone].text}>${baseVerdict.title}</b> · עכשיו: <b class=${TONE[mk.verdict.tone].text}>${mk.verdict.title}</b> · נשאר בחודש מלא ${fmt(mk.st.profit - mk.st.setAside)}</p>
         <button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${onClearPicks}>לבטל את כל השינויים</button>
       </div>`}
-      <ul class="grid gap-3 md:grid-cols-3">${list.map((fx) => html`<${FixCard} key=${fx.id} fx=${fx} picked=${picks.some((p) => p.id === fx.d.id)} onApply=${() => onApply(fx)} />`)}</ul>
+      <ul class=${cx('grid gap-3', list.length === 4 ? 'md:grid-cols-2' : 'md:grid-cols-3')}>${list.map((fx) => html`<${FixCard} key=${fx.id + scen} fx=${fx} pick=${picks.find((p) => p.id === fx.d.id)} base=${base} scen=${scen} onApply=${(d) => onApply(fx, d)} onEdit=${onEditPick} />`)}</ul>
     <//>`}
     <${Basis} s=${s} m=${m} />
     <div class="flex flex-wrap items-center gap-3">

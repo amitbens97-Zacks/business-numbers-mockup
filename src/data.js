@@ -248,7 +248,8 @@ export const FROM_STEP2 = { goal: 12000, hoursWeek: 20 };
 export const DEFAULT_ASSUMPTIONS = {
   leadToCall: 40, // % of leads that book a call
   closeRate: 20, // % of calls that buy
-  hoursMonth: 80, // hours a month for client work (from step 2: hours a week x 4)
+  hoursWeek: 20, // hours a week for client work and sales calls (from step 2)
+  hoursMonth: 86.7, // the same a month: a week x 52 / 12
   stayMonths: 3, // a monthly client stays this long on average
 };
 
@@ -334,7 +335,7 @@ export const SCENARIOS = [
     label: 'שלב 2 · לקוחות ראשונים',
     sub: 'רק 8 שעות בשבוע, אין לזה זמן',
     stage: 'first',
-    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 32 } }),
+    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursWeek: 7.5, hoursMonth: 32.5 } }),
     demo: (s) => {
       s.bank = { has: false, amount: 6400 };
       s.expenses = [...expenses(), exp(ADS, 200, 'marketing', 'weekly', 0)];
@@ -349,7 +350,7 @@ export const SCENARIOS = [
     label: 'שלב 3 · עסק פעיל',
     sub: 'עוסק מורשה, צריך לגדול פי 1.8',
     stage: 'active',
-    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: 100 } }),
+    make: () => base({ assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursWeek: 23, hoursMonth: 99.7 } }),
     demo: (s) => {
       s.bank = { has: true, amount: 1800 };
       s.expenses = [...expenses(450), exp(ADS, 200, 'marketing', 'weekly', 0), exp('ביטוח אחריות מקצועית', 1320, 'insurance', 'yearly', 12)];
@@ -366,7 +367,7 @@ export const SCENARIOS = [
     label: 'דילג על השלבים 2 ו-3',
     sub: 'בלי מוצרים בסל ובלי יעד',
     stage: 'setup',
-    make: () => base({ products: [], goal: null, assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursMonth: null } }),
+    make: () => base({ products: [], goal: null, assumptions: { ...clone(DEFAULT_ASSUMPTIONS), hoursWeek: null, hoursMonth: null } }),
     demo: (s) => {
       s.bank = { has: true, amount: 8000 };
       s.setupBudget = 0;

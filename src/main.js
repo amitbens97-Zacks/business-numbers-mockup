@@ -84,7 +84,7 @@ function reasonOf(screen, s, m) {
   }
   if (screen === 'goal' && !s.goal) return 'צריך יעד חודשי';
   if (screen === 'sell') {
-    if (!s.assumptions.hoursMonth) return 'צריך כמה שעות בחודש יש לך';
+    if (!s.assumptions.hoursMonth) return 'צריך כמה שעות בשבוע יש לך';
     if (!Object.values(m.mix).some((n) => n > 0)) return 'צריך לפחות מכירה אחת בתמהיל';
   }
   return null;
@@ -192,18 +192,30 @@ function App({ view: shellView, onViewChange }) {
     toScreen(id);
   };
   // Part 5: pick a fix, or take it back. The state is rebuilt from before the first pick.
-  const applyFix = (fx) => {
+  // d: the fix as the user set it (the card can change the number before adding).
+  const applyFix = (fx, d = fx.d) => {
     const prev = sRef.current;
     const base = prev.fixBase || fixBaseOf(prev);
     const was = prev.picks || [];
-    const on = was.some((p) => p.id === fx.d.id);
-    const picks = on ? was.filter((p) => p.id !== fx.d.id) : [...was, fx.d];
+    const on = was.some((p) => p.id === d.id);
+    const picks = on ? was.filter((p) => p.id !== d.id) : [...was, d];
     const next = clone(withPicks(prev, base, picks));
     next.picks = picks;
     next.fixBase = picks.length ? base : null;
     next.applied = picks.map((d) => ({ id: d.id, title: d.title, basket: d.basket, at: 0 }));
     setS(next);
-    notify(on ? `ביטלת: ${fx.title}` : fx.basket ? `${fx.title}. עודכן גם בסל המוצרים` : fx.title, on ? 'rotate-ccw' : 'wand-sparkles', () => undoTo(prev));
+    notify(on ? `ביטלת: ${d.title}` : d.basket ? `${d.title}. עודכן גם בסל המוצרים` : d.title, on ? 'rotate-ccw' : 'wand-sparkles', () => undoTo(prev));
+  };
+  // Change the number of a fix already in the plan: the plan is built again with the new one.
+  const editPick = (d) => {
+    const prev = sRef.current;
+    if (!prev.fixBase) return;
+    const picks = (prev.picks || []).map((p) => (p.id === d.id ? d : p));
+    const next = clone(withPicks(prev, prev.fixBase, picks));
+    next.picks = picks;
+    next.fixBase = prev.fixBase;
+    next.applied = picks.map((x) => ({ id: x.id, title: x.title, basket: x.basket, at: 0 }));
+    setS(next);
   };
   const clearPicks = () => {
     const prev = sRef.current;
@@ -277,7 +289,7 @@ function App({ view: shellView, onViewChange }) {
     prices: html`<${PricesScreen} ...${props} />`,
     goal: html`<${GoalScreen} ...${props} />`,
     sell: html`<${SellScreen} ...${props} />`,
-    forecast: html`<${ForecastScreen} ...${props} onApply=${applyFix} onClearPicks=${clearPicks} />`,
+    forecast: html`<${ForecastScreen} ...${props} onApply=${applyFix} onEditPick=${editPick} onClearPicks=${clearPicks} />`,
     doc: html`<${DocScreen} ...${props} />`,
     done: html`<${Done} s=${s} />`,
   }[screen];
