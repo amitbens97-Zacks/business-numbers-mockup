@@ -8,7 +8,7 @@ import { Money, Stepper, Section, Result, YesNo } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
+  paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, KIDS, kidPoints, reservePoints, DEGREE_PTS, OLEH_PTS, SETTLE, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
 // ---------- part 3: the goal ----------
@@ -73,9 +73,8 @@ export function GoalScreen({ s, up, m }) {
 // The user fills what entitles them to credit points; the result is a clear rate: how much
 // of every shekel of profit goes to income tax and National Insurance, at the profit that
 // leaves the goal. The rate is used in parts 4-5. "I have a rate from my accountant" types it.
-const SOLDIER = [{ id: 0, label: 'לא' }, { id: 1, label: '12-21 חודשי שירות' }, { id: 2, label: '22 חודשים ומעלה' }];
-const DEGREE = [{ id: 0, label: 'לא' }, { id: 1, label: 'תואר ראשון' }, { id: 2, label: 'תואר שני או תעודת מקצוע' }];
-const OLEH = [{ id: 0, label: 'לא' }, { id: 1, label: 'עד שנה וחצי' }, { id: 2, label: 'עד שנתיים וחצי' }, { id: 3, label: 'עד שלוש שנים וחצי' }];
+const DEGREE = [{ id: 0, label: 'לא' }, { id: 1, label: 'תואר ראשון' }, { id: 2, label: 'תואר שני' }, { id: 3, label: 'ראשון ושני' }, { id: 4, label: 'תעודת מקצוע' }];
+const OLEH = [{ id: 0, label: 'לא' }, { id: 1, label: 'בשנה הראשונה' }, { id: 2, label: 'שנה עד 2.5 שנים' }, { id: 3, label: '2.5 עד 3.5 שנים' }, { id: 4, label: '3.5 עד 4.5 שנים' }];
 const ptsText = (n) => (n === 1 ? 'נקודה אחת' : `${num(n, 2)} נקודות`);
 
 function Right({ title, hint, pts, children }) {
@@ -89,6 +88,9 @@ function Right({ title, hint, pts, children }) {
 function TaxCalc({ s, up }) {
   const c = s.taxCalc;
   const set = (f, v) => up((d) => (d.taxCalc = { ...d.taxCalc, [f]: v }));
+  const extra = !!(c.soldier || c.degree || c.reserveDays || c.oleh || c.single || c.settle);
+  const [more, setMore] = useState(extra);
+  const setKid = (f, v) => up((d) => (d.taxCalc = { ...d.taxCalc, kids: { ...(d.taxCalc.kids || {}), [f]: v } }));
   const r = taxAtGoal(s);
   const pct = num(r.rate * 100, 1);
   const pts = creditPoints(c);
@@ -98,10 +100,11 @@ function TaxCalc({ s, up }) {
   const lines = [
     ['רווח לפני מס בשנה', fmt(r.P)],
     r.salary > 0 && ['המשכורת שלך בשנה (העסק מתחיל מהמדרגה שהיא מסיימת)', fmt(r.salary)],
+    r.deduct > 0 && ['פחות 52% מהביטוח הלאומי (מוכר כהוצאה)', fmt(-r.deduct)],
     ['מס הכנסה לפי המדרגות', fmt(-r.gross)],
-    r.gross - r.incomeTax > 0 && [`פחות ${ptsText(pts.total)} זיכוי (${fmt(TAX_2026.point)} לנקודה)${r.salary > 0 ? ', מה שהמשכורת לא ניצלה' : ''}`, fmt(r.gross - r.incomeTax)],
+    r.gross - r.incomeTax > 0 && [`פחות ${ptsText(pts.total)} זיכוי (${fmt(TAX_2026.point)} לנקודה)${r.sRate > 0 ? ` והנחת יישוב (${r.sRate}% עד ${fmt(r.sCap)})` : ''}${r.salary > 0 ? ', מה שהמשכורת לא ניצלה' : ''}`, fmt(r.gross - r.incomeTax)],
     r.salary > 0 && r.gross - r.incomeTax <= 0 && ['נקודות הזיכוי כבר מנוצלות במס על המשכורת', fmt(0)],
-    ['ביטוח לאומי ובריאות', fmt(-r.ni)],
+    ['ביטוח לאומי ובריאות (7.7% עד 7,703 ₪ בחודש, 18% מעל)', fmt(-r.ni)],
     r.niMin > 0 && ['פחות המינימום שכבר בהוצאות הקבועות', fmt(Math.min(r.ni, r.niMin))],
     ['ביחד מס וביטוח לאומי בשנה', fmt(-r.total), true],
     ['נשאר לך בשנה', fmt(r.P - r.total)],
@@ -119,45 +122,54 @@ function TaxCalc({ s, up }) {
           <p class="text-[14px] font-bold text-muted">מכל שקל של רווח, למס ולביטוח הלאומי ${g('תעביר', 'תעבירי')}</p>
           <p class="font-display text-[34px] font-black leading-tight text-brand-600 tabular-nums md:text-[40px]">${pct}%</p>
           <p class="mt-1 text-[15px]">כדי שיישארו לך <b>${fmt(s.goal || 0)}</b> בחודש, העסק צריך להרוויח <b>${month(r.P)}</b> בחודש לפני מס. מזה <b>${month(r.incomeTax)}</b> מס הכנסה ו-<b>${month(r.niNet)}</b> ביטוח לאומי${r.niMin > 0 ? ' (מעבר למינימום שכבר בהוצאות)' : ''}.</p>
-          <${How} class="mt-2"><${CalcLines} lines=${lines} note="האחוז הוא ממוצע על כל הרווח: המדרגות עולות ככל שמרוויחים יותר, ונקודות הזיכוי מורידות מהמס." /><//>
+          <${How} class="mt-2"><${CalcLines} lines=${lines} note="האחוז הוא ממוצע על כל הרווח: המדרגות עולות ככל שמרוויחים יותר, ונקודות הזיכוי והנחת היישוב מורידות מהמס. נתוני 2026." /><//>
         </div>`}
 
     <div class="grid gap-3 md:grid-cols-2">
-      <${Right} title="מי ${g('אתה', 'את')}?" hint="הבסיס של כל תושב: גבר 2.25 נקודות, אישה 2.75." pts=${c.gender === 'f' ? 2.75 : 2.25}>
+      <${Right} title="מי ${g('אתה', 'את')}?" hint="כל תושב מקבל 2.25 נקודות, ואישה עוד חצי. אלה מגיעות לכולם." pts=${c.gender === 'f' ? 2.75 : 2.25}>
         <${Chips} small options=${[{ id: 'm', label: 'גבר' }, { id: 'f', label: 'אישה' }]} value=${c.gender} onChange=${(v) => set('gender', v)} />
       <//>
-      <${Right} title="העסק הוא ההכנסה היחידה שלך?" hint=${c.sole === false ? 'המשכורת כבר משתמשת במדרגות הנמוכות, אז העסק מתחיל ממדרגה גבוהה יותר.' : 'אם יש גם משכורת, המס על העסק גבוה יותר.'}>
+      <${Right} title="העסק הוא ההכנסה היחידה שלך?" hint=${c.sole === false ? 'המשכורת כבר משתמשת במדרגות הנמוכות ובנקודות הזיכוי, אז העסק מתחיל ממדרגה גבוהה יותר.' : 'אם יש גם משכורת, המס על העסק גבוה יותר.'}>
         <${YesNo} value=${c.sole !== false} onChange=${(v) => set('sole', v)} />
         ${c.sole === false && html`<div class="mt-2 max-w-[220px]"><${Field} class="!mb-0" label="משכורת חודשית ברוטו"><${Money} label="משכורת חודשית" value=${c.salary} onChange=${(v) => set('salary', v)} /><//></div>`}
       <//>
-      <${Right} title="ילדים עד גיל 18" hint="עד גיל 6: נקודה וחצי לכל ילד. מגיל 6 עד 17: נקודה." pts=${(c.kidsSmall || 0) * 1.5 + (c.kidsBig || 0)}>
-        <div class="flex flex-wrap gap-x-5 gap-y-2 text-[14px]">
-          <span class="flex items-center gap-2">עד גיל 6 <${Stepper} label="ילדים עד גיל 6" value=${c.kidsSmall || 0} onChange=${(v) => set('kidsSmall', v)} /></span>
-          <span class="flex items-center gap-2">6 עד 17 <${Stepper} label="ילדים מגיל 6 עד 17" value=${c.kidsBig || 0} onChange=${(v) => set('kidsBig', v)} /></span>
+      <${Right} title="ילדים, לפי הגיל השנה" hint=${c.gender === 'f' ? 'עד גיל 5 אותן נקודות לשני ההורים. מגיל 6 עד 17: 2 נקודות לאם.' : 'עד גיל 5 אותן נקודות לשני ההורים. מגיל 6 עד 17: נקודה לאב.'} pts=${kidPoints(c)}>
+        <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 text-[14px] sm:grid-cols-2">
+          ${KIDS.filter(([, , m, d]) => (c.gender === 'f' ? m : d) > 0).map(([f, label]) => html`<span key=${f} class="flex items-center justify-between gap-2">${label}<${Stepper} label=${`ילדים: ${label}`} value=${(c.kids && c.kids[f]) || 0} onChange=${(v) => setKid(f, v)} /></span>`)}
         </div>
       <//>
-      <${Right} title=${`${g('השתחררת', 'השתחררת')} מצה"ל או משירות לאומי ב-3 השנים האחרונות?`} hint="22 חודשי שירות ומעלה: 2 נקודות. 12 עד 21 חודשים: נקודה." pts=${[0, 1, 2][c.soldier || 0]}>
-        <${Chips} small options=${SOLDIER} value=${c.soldier || 0} onChange=${(v) => set('soldier', v)} />
+    </div>
+    ${!more && html`<button type="button" aria-expanded="false" class="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-dashed border-brand-300 bg-white px-3 py-2.5 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => setMore(true)}>
+      <span><b class="block text-[15px] text-brand-600">עוד זכויות שמורידות את המס</b><small class="text-[13px] text-muted">שחרור מהצבא, תואר, מילואים, עלייה, הורה יחיד, יישוב עם הנחה</small></span>
+      <${Icon} name="chevron-down" size=${20} class="shrink-0 text-brand-600" />
+    </button>`}
+    ${more && html`<div class="rise mt-3 grid gap-3 md:grid-cols-2">
+      <${Right} title=${`${g('השתחררת', 'השתחררת')} מצה"ל או משירות לאומי ב-3 השנים האחרונות?`} hint=${`${c.gender === 'f' ? '22' : '23'} חודשי שירות ומעלה (שירות לאומי: 24): 2 נקודות. 12 חודשים ומעלה: נקודה.`} pts=${[0, 1, 2][c.soldier || 0]}>
+        <${Chips} small options=${[{ id: 0, label: 'לא' }, { id: 1, label: 'שנה ומעלה' }, { id: 2, label: c.gender === 'f' ? '22 חודשים ומעלה' : '23 חודשים ומעלה' }]} value=${c.soldier || 0} onChange=${(v) => set('soldier', v)} />
       <//>
-      <${Right} title="סיימת תואר או לימודי מקצוע לאחרונה?" hint="תואר ראשון ב-3 השנים האחרונות: נקודה. תואר שני או תעודת מקצוע ב-2 השנים האחרונות: חצי." pts=${[0, 1, 0.5][c.degree || 0]}>
+      <${Right} title="סיימת תואר או לימודי מקצוע לאחרונה?" hint="תואר ראשון: נקודה בכל שנה, עד 3 שנים אחרי הסיום. תואר שני: חצי נקודה, שנתיים. תעודת מקצוע: נקודה, במקום תואר." pts=${DEGREE_PTS[c.degree || 0]}>
         <${Chips} small options=${DEGREE} value=${c.degree || 0} onChange=${(v) => set('degree', v)} />
       <//>
-      <${Right} title=${`${g('עלית', 'עלית')} לארץ ב-3.5 השנים האחרונות?`} hint="בשנה וחצי הראשונות 3 נקודות, בשנה שאחריה 2, ובשנה שאחריה נקודה." pts=${[0, 3, 2, 1][c.oleh || 0]}>
-        <${Chips} small options=${OLEH} value=${c.oleh || 0} onChange=${(v) => set('oleh', v)} />
+      <${Right} title=${`${g('שירתת', 'שירתת')} במילואים כ${g('לוחם', 'לוחמת')} בשנה שעברה?`} hint="מ-30 ימים: חצי נקודה, ועוד רבע נקודה על כל 5 ימים מ-50, עד 4 נקודות." pts=${reservePoints(c.reserveDays)}>
+        <div class="max-w-[160px]"><${Money} suffix="ימים" label="ימי מילואים כלוחם" value=${c.reserveDays || null} onChange=${(v) => set('reserveDays', Math.min(366, v ?? 0))} /></div>
       <//>
-      <${Right} title=${`${g('משרת', 'משרתת')} במילואים פעילים?`} hint="חצי נקודה." pts=${c.reserve ? 0.5 : 0}>
-        <${YesNo} value=${!!c.reserve} onChange=${(v) => set('reserve', v)} />
+      <${Right} title=${`${g('עלית', 'עלית')} לארץ ב-4.5 השנים האחרונות?`} hint="שנה ראשונה: נקודה. עד 2.5 שנים: 3 נקודות בשנה. עד 3.5: 2. עד 4.5: נקודה." pts=${OLEH_PTS[c.oleh || 0]}>
+        <${Chips} small options=${OLEH} value=${c.oleh || 0} onChange=${(v) => set('oleh', v)} />
       <//>
       <${Right} title=${`${g('הורה יחיד, או משלם', 'הורה יחידה, או משלמת')} מזונות?`} hint="נקודה." pts=${c.single ? 1 : 0}>
         <${YesNo} value=${!!c.single} onChange=${(v) => set('single', v)} />
       <//>
-    </div>
+      <${Right} title=${`${g('גר', 'גרה')} ביישוב שמקבל הנחה ממס?`} hint=${c.settle ? 'ההנחה יורדת ישר מהמס, עד התקרה של היישוב.' : 'יישובים בצפון, בדרום ובפריפריה. במערכת בוחרים את היישוב מהרשימה של רשות המסים.'}>
+        <${YesNo} value=${!!c.settle} onChange=${(v) => set('settle', v ? 1 : 0)} />
+        ${!!c.settle && html`<div class="mt-2"><p class="mb-1 text-[13px] font-bold">ההנחה של היישוב שלך</p><${Chips} small options=${SETTLE.map(([r2, cap], i) => ({ id: i + 1, label: `${r2}% עד ${num(cap / 1000)} אלף` }))} value=${c.settle} onChange=${(v) => set('settle', v)} /></div>`}
+      <//>
+    </div>`}
 
     <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-      <p class="text-[14px]"><b>${ptsText(pts.total)} זיכוי</b> = ${fmt(pts.total * TAX_2026.point)} פחות מס בשנה.</p>
+      <p class="text-[14px]"><b>${ptsText(pts.total)} זיכוי</b> = ${fmt(pts.total * TAX_2026.point)} פחות מס בשנה.${r.incomeTax <= 0 && r.gross > 0 ? ' המס שלך נמוך מזה, אז לא הכול מנוצל.' : ''}</p>
       ${!manual && html`<button type="button" class="text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${toManual}>יש לך אחוז מרואה החשבון? להזין אותו</button>`}
     </div>
-    <p class="mt-2 text-[12px] text-muted">הערכה לפי מדרגות המס של 2026, לא ייעוץ מס. החישוב שמרני: הפקדות לפנסיה ולקרן השתלמות ועוד זיכויים יכולים להוריד את המס בפועל.</p>
+    <p class="mt-2 text-[12px] text-muted">הערכה לפי נתוני המס והביטוח הלאומי של 2026, לא ייעוץ מס. לא כולל הפקדות לפנסיה ולקרן השתלמות, שמורידות את המס בפועל.</p>
   <//>`;
 }
 

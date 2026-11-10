@@ -98,19 +98,33 @@ export const missingOf = (p) => [p.price == null && 'מחיר', p.cost == null &
 export const paymentsOf = (p) => (payOf(p) === 'monthly' && p.kind === 'program' ? p.months || 1 : 1);
 const callHours = (s) => s.products.find((p) => p.id === 'e1')?.hours ?? 0.5;
 // ---------- tax (the accountant chapter's calculator, 2026) ----------
-// Income tax by the 2026 brackets, minus credit points; National Insurance and health on the
-// business profit (reduced rate up to 60% of the average wage, a salary uses up that part
-// first). With a salary, the business is taxed from where the salary ends. The rate is the
-// share of the profit before tax that goes to tax and NI, at the profit that leaves the goal.
-// Conservative: no NI deduction, no pension deposits.
+// Checked 10.11.2026 against the Tax Authority's 2026 deductions booklet (brackets after the
+// widening of the 20% and 31% brackets, approved 30.3.2026 retroactive to 1.1.2026), the
+// National Insurance self-employed rates page, and Kol Zchut for the credit points.
+//   - Income tax by the 2026 brackets on the taxable profit, minus credit points (2,904 a
+//     point a year) and the settlement discount (rate x income up to a ceiling).
+//   - NI + health on the profit: 7.7% up to 7,703 a month (60% of the average wage), 18% above,
+//     up to 51,910 a month. A salary uses up the reduced part first.
+//   - 52% of the NI part (not health) is deducted from the taxable profit (section 47A).
+//   - With a salary, the business is taxed from where the salary ends, and the points go to
+//     the salary first.
+// The rate = (income tax + NI) ÷ the profit before tax, at the profit that leaves the goal.
+// Not included (the user is told): pension and study-fund deposits.
 export const TAX_2026 = {
   brackets: [[84120, 0.1], [120720, 0.14], [228000, 0.2], [301200, 0.31], [560280, 0.35], [721560, 0.47], [Infinity, 0.5]],
   point: 2904,
   niLow: 7703 * 12,
-  niLowRate: 0.0597,
-  niRate: 0.1783,
+  niCap: 51910 * 12,
+  niLowRate: 0.077, // 4.47% NI + 3.23% health
+  niRate: 0.18, // 12.83% NI + 5.17% health
+  niPartLow: 0.0447,
+  niPart: 0.1283,
+  niDeduct: 0.52,
 };
 export const NI_MIN = 'ביטוח לאומי (מינימום)';
+// The settlement discount: rate and ceiling as in the booklet's table (the system picks the
+// town from the official list; the mockup shows the combinations).
+export const SETTLE = [[7, 146640], [10, 180000], [12, 213240], [14, 219960], [16, 226560], [18, 245400], [20, 267840]];
 function bracketTax(x) {
   let tax = 0;
   let from = 0;
@@ -121,17 +135,31 @@ function bracketTax(x) {
   }
   return tax;
 }
+// Children by age in the tax year: [field, label, points for the mother, for the father].
+export const KIDS = [
+  ['k0', 'נולד השנה', 2.5, 2.5],
+  ['k12', 'בן 1 או 2', 4.5, 4.5],
+  ['k3', 'בן 3', 3.5, 3.5],
+  ['k45', 'בן 4 או 5', 2.5, 2.5],
+  ['k617', 'בן 6 עד 17', 2, 1],
+  ['k18', 'בן 18 השנה', 0.5, 0],
+];
+export const kidPoints = (c) => KIDS.reduce((a, [f, , m, d]) => a + ((c.kids && c.kids[f]) || 0) * (c.gender === 'f' ? m : d), 0);
+export const kidCount = (c) => KIDS.reduce((a, [f]) => a + ((c.kids && c.kids[f]) || 0), 0);
+// Combat reserve days last year -> points (section 39B, from 2026, at most 4).
+export const reservePoints = (days) => (!days || days < 30 ? 0 : days < 40 ? 0.5 : days < 50 ? 0.75 : Math.min(4, 1 + Math.floor((days - 50) / 5) * 0.25));
+export const DEGREE_PTS = [0, 1, 0.5, 1.5, 1];
+export const OLEH_PTS = [0, 1, 3, 2, 1];
 // The credit points, by what the user filled (s.taxCalc).
 export function creditPoints(c) {
-  const kids = (c.kidsSmall || 0) * 1.5 + (c.kidsBig || 0);
   const lines = [
-    [c.gender === 'f' ? 'אישה' : 'גבר', c.gender === 'f' ? 2.75 : 2.25],
-    [c.soldier === 2 ? 'שחרור מצה"ל, 22 חודשי שירות ומעלה' : 'שחרור מצה"ל, 12-21 חודשי שירות', [0, 1, 2][c.soldier || 0]],
-    [`ילדים (${(c.kidsSmall || 0) + (c.kidsBig || 0)})`, kids],
-    ['מילואים פעיל', c.reserve ? 0.5 : 0],
+    [c.gender === 'f' ? 'תושבת ישראל (2.25 + חצי לאישה)' : 'תושב ישראל', c.gender === 'f' ? 2.75 : 2.25],
+    ['שחרור מצה"ל או משירות לאומי', [0, 1, 2][c.soldier || 0]],
+    [`ילדים (${kidCount(c)})`, kidPoints(c)],
+    [`מילואים כלוחם (${c.reserveDays || 0} ימים)`, reservePoints(c.reserveDays)],
     ['הורה יחיד או משלם מזונות', c.single ? 1 : 0],
-    [c.degree === 1 ? 'תואר ראשון' : 'תואר שני או תעודת מקצוע', [0, 1, 0.5][c.degree || 0]],
-    ['עלייה', [0, 3, 2, 1][c.oleh || 0]],
+    ['תואר או תעודת מקצוע', DEGREE_PTS[c.degree || 0]],
+    ['עלייה', OLEH_PTS[c.oleh || 0]],
   ].filter(([, n]) => n > 0);
   return { lines, total: lines.reduce((a, [, n]) => a + n, 0) };
 }
@@ -141,14 +169,22 @@ export function taxOn(s, P) {
   const salary = c.sole === false ? (c.salary || 0) * 12 : 0;
   const pts = creditPoints(c);
   const credit = pts.total * TAX_2026.point;
-  const after = (x) => Math.max(0, bracketTax(x) - credit);
-  const gross = bracketTax(salary + P) - bracketTax(salary);
-  const incomeTax = after(salary + P) - after(salary);
+  const [sRate, sCap] = c.settle ? SETTLE[c.settle - 1] : [0, 0];
+  // NI + health on the business profit; a salary uses up the reduced part first.
   const low = Math.max(0, TAX_2026.niLow - salary);
-  const ni = Math.min(P, low) * TAX_2026.niLowRate + Math.max(0, P - low) * TAX_2026.niRate;
+  const top = Math.max(0, TAX_2026.niCap - salary);
+  const atLow = Math.min(P, low);
+  const atFull = Math.max(0, Math.min(P, top) - low);
+  const ni = atLow * TAX_2026.niLowRate + atFull * TAX_2026.niRate;
+  const niPart = atLow * TAX_2026.niPartLow + atFull * TAX_2026.niPart;
+  const deduct = niPart * TAX_2026.niDeduct;
+  const taxable = Math.max(0, P - deduct);
+  const after = (x) => Math.max(0, bracketTax(x) - credit - (sRate / 100) * Math.min(x, sCap));
+  const gross = bracketTax(salary + taxable) - bracketTax(salary);
+  const incomeTax = after(salary + taxable) - after(salary);
   const niMin = s.expenses.filter((x) => x.name === NI_MIN).reduce((a, x) => a + (x.amount || 0) * 12, 0);
   const niNet = Math.max(0, ni - niMin);
-  return { P, salary, pts, credit, gross, incomeTax, ni, niMin, niNet, total: incomeTax + niNet };
+  return { P, salary, pts, credit, sRate, sCap, deduct, taxable, gross, incomeTax, ni, niMin, niNet, total: incomeTax + niNet };
 }
 // At the goal: the yearly profit before tax that leaves 12 x the goal, and its rate.
 export function taxAtGoal(s) {
