@@ -10,12 +10,10 @@
 //     (they stack month after month); new monthly clients = active / months a client stays.
 //     A program over several months spreads its hours over those months.
 //   - Plan back: new clients / close rate = calls; calls / lead-to-call rate = leads.
-//   - Forecast, 12 months from next month, in three scenarios (rampPlan below): sales grow
-//     by the same % of clients every month, from the start point (the first client in
-//     stage 1, today's new clients in stages 2-3), through the full month (the whole mix),
-//     and on at the same pace until the user's hours are full. Realistic 20% a month (a
-//     well-run business, every stage), pessimistic 10%, optimistic 30%. The checks, the
-//     verdict and the summary use the realistic one.
+//   - Forecast, 12 months from next month, in three scenarios (rampPlan below): a start,
+//     a pace that slows month by month, weak months (holidays, summer) and the hours as a
+//     ceiling. The user can edit each scenario. The checks, the verdict and the summary
+//     use the realistic one.
 //   - When the money arrives: "all at the start" = in the month of the sale ("in advance"
 //     for a subscription = the average stay, paid at the start); "each month" = a program
 //     over its months, a single sale over the months the user set, a subscription monthly.
@@ -211,36 +209,60 @@ export const isSharkMix = (s) => !s.mix;
 
 // ---------- the 12-month forecast ----------
 
-// The equation of the three scenarios. One rule, one number that changes:
-//   level(month) = sales that month as a share of the full month (1 = the whole mix).
-//   Stage 1 (no clients yet): the first client in month 1, then g% more clients each month:
-//     level(m) = (1 / need) × (1 + g)^(m - 1)
-//   Stages 2-3: from today's new clients a month, g% more each month:
-//     level(m) = (today / need) × (1 + g)^m
-//   need = new clients a full month needs (part 4). Months to the full month = the first
-//   month the level reaches 1: 1 + ln(need) / ln(1 + g), or ln(need / today) / ln(1 + g),
-//   rounded up. After that the same pace goes on, until the hours the user has are full:
-//   level never goes above hours available ÷ hours of the full month (and never below 1).
-//   g: realistic 20% (a well-run business, at any stage), pessimistic 10%, optimistic 30%.
-export const PACE = { real: 20, low: 10, high: 30 };
+// The equation of the three scenarios. Growth is not a straight, steady line:
+//   1. A start: stage 1 = the first client arrives after `delay` months; stages 2-3 =
+//      today's new clients, flat for `delay` months.
+//   2. The pace slows: in growth month k the clients grow by g(k) = start% × (1 - slow%)^(k-1).
+//      A small business grows fast from a small base; the bigger it gets, the harder each %.
+//   3. Weak months: in the months of Passover, the summer break and the Tishrei holidays,
+//      sales are dip% lower, and come back the month after (the trend goes on underneath).
+//   4. A ceiling: never more than the hours the user has (hours available ÷ full-month hours).
+//   level(m) = min(ceiling, trend(m)) × (weak month ? 1 - dip% : 1), where trend(m) =
+//   trend(m-1) × (1 + g(k)). 1 = the full month (the whole mix). The full month arrives in
+//   the first month the level reaches 1. The user can edit the four numbers of every
+//   scenario (s.pace); the checks, verdict, fixes and summary use the realistic one.
+export const PACE_DEFAULT = {
+  real: { start: 25, slow: 4, dip: 20, delay: 0 },
+  low: { start: 15, slow: 6, dip: 30, delay: 1 },
+  high: { start: 35, slow: 4, dip: 10, delay: 0 },
+};
 export const SCENARIO_KEYS = ['real', 'low', 'high'];
+// Weak months by calendar month (the mockup's year). The system takes them from the Hebrew
+// calendar of each year: Tishrei falls in September in some years and October in others.
+export const WEAK = { 4: 'פסח', 8: 'החופש הגדול', 10: 'חגי תשרי' };
+export const paceOf = (s, key) => ({ ...PACE_DEFAULT[key], ...((s.pace && s.pace[key]) || {}) });
+export const paceEdited = (s, key) => !!(s.pace && s.pace[key] && Object.keys(PACE_DEFAULT[key]).some((f) => s.pace[key][f] !== PACE_DEFAULT[key][f]));
+export const growAt = (P, k) => (P.start / 100) * Math.pow(1 - P.slow / 100, k - 1);
+const monthNum = (m) => Number(addMonth(FIRST_MONTH, m - 1).split('-')[1]);
+const HORIZON = 60;
 export function rampPlan(s, st, key = 'real') {
-  const grow = PACE[key];
-  const k = 1 + grow / 100;
+  const P = paceOf(s, key);
   const need = st.newClients;
   const today = s.stage === 'setup' ? null : todayAvg(s);
   const avail = s.assumptions.hoursMonth || 0;
   const cap = avail > 0 && st.hours > 0 ? Math.max(1, avail / st.hours) : 1;
   const fresh = !(today && today.clients > 0);
   const from = fresh ? 1 : today.clients;
-  const start = need > 0 ? Math.min(1, from / need) : 1; // level in month 1 (stage 1) / month 0 (stages 2-3)
-  const level = (m) => (m <= 0 ? (fresh ? 0 : Math.min(cap, start)) : Math.min(cap, start * Math.pow(k, fresh ? m - 1 : m)));
+  const start = need > 0 ? Math.min(1, from / need) : 1;
+  const delay = Math.max(0, Math.round(P.delay || 0));
+  const levels = [fresh ? 0 : Math.min(cap, start)];
+  let trend = fresh ? 0 : start;
+  let k = 0;
+  let months = null;
+  for (let m = 1; m <= HORIZON; m++) {
+    if (m > delay) {
+      if (trend === 0) trend = start; // the first client
+      else trend *= 1 + growAt(P, ++k);
+    }
+    const weak = WEAK[monthNum(m)];
+    const lvl = Math.min(cap, trend) * (weak ? 1 - (P.dip || 0) / 100 : 1);
+    levels.push(lvl);
+    if (months == null && lvl >= 1 - 1e-9) months = m;
+  }
   const ratio = need > 0 ? need / from : 1;
-  const raw = ratio <= 1 ? (fresh ? 1 : 0) : (fresh ? 1 : 0) + Math.log(ratio) / Math.log(k);
-  const months = Math.max(1, Math.ceil(raw - 1e-9));
-  const capMonth = cap > 1 ? months + Math.ceil(Math.log(cap) / Math.log(k) - 1e-9) : months;
-  return { key, grow, months, raw, from, need, ratio, fresh, cap, capMonth, start, level };
+  return { key, P, months, from, need, ratio, fresh, cap, start, delay, level: (m) => levels[Math.min(m, HORIZON)] };
 }
+export const weakIn = (rows) => rows.map((r) => WEAK[Number(r.key.split('-')[1])] && [r.key, WEAK[Number(r.key.split('-')[1])]]).filter(Boolean);
 
 export function forecast(s, mix, key = 'real') {
   const st = steady(s, mix);
@@ -325,7 +347,7 @@ export function forecast(s, mix, key = 'real') {
     return { q: q + 1, from: part[0].key, to: part[2].key, profit: part.reduce((x, r) => x + r.profit, 0), goal: Math.round((annualGoal * share) / 100) * 100 };
   });
   return {
-    key, rows, st, r0, ramp, reachIdx: ramp <= 12 ? ramp - 1 : -1, plan, startCash, cushion, goalIdx, minRow, fillIdx, yearProfit, annualGoal, quarters,
+    key, rows, st, r0, ramp, reachIdx: ramp != null && ramp <= 12 ? ramp - 1 : -1, plan, startCash, cushion, goalIdx, minRow, fillIdx, yearProfit, annualGoal, quarters,
     yearIncome: rows.reduce((x, r) => x + r.income, 0),
     yearGross, ceilingMonth,
   };
@@ -410,7 +432,7 @@ export function checks(s, mix, fc) {
       q: 'הקצב סביר?',
       tone: 'info',
       a: `${num(st.newClients, 1)} לקוחות חדשים בחודש`,
-      sub: `ב-${fc.plan.grow}% יותר לקוחות בכל חודש, מגיעים לזה תוך ${fc.ramp} חודשים`,
+      sub: fc.ramp != null && fc.ramp <= 12 ? `בתסריט הריאלי מגיעים לזה תוך ${fc.ramp} חודשים` : 'בתסריט הריאלי זה לוקח יותר משנה',
       how: [
         ['פניות שמגיעות אליך בחודש', num(st.leads)],
         [`${s.assumptions.leadToCall}% מהן קובעות שיחה`, `${num(st.calls, 1)} שיחות`],
@@ -420,21 +442,22 @@ export function checks(s, mix, fc) {
     });
   } else {
     const ratio = st.newClients / today.clients;
-    const tone = fc.ramp <= 12 ? 'ok' : 'warn';
+    const inYear = fc.ramp != null && fc.ramp <= 12;
+    const tone = inYear ? 'ok' : 'warn';
     out.push({
       id: 'pace',
       q: 'הקצב סביר?',
       tone,
       a: ratio <= 1 ? 'כן, כמו היום' : `פי ${num(ratio, 1)} ממה שיש היום`,
-      sub: ratio <= 1 ? `היום ${clientsText(today.clients)} בחודש, וצריך ${num(st.newClients, 1)}` : `ב-${fc.plan.grow}% יותר לקוחות בכל חודש: ${fc.ramp <= 12 ? `תוך ${fc.ramp} חודשים` : `${fc.ramp} חודשים, יותר משנה`}`,
+      sub: ratio <= 1 ? `היום ${clientsText(today.clients)} בחודש, וצריך ${num(st.newClients, 1)}` : `בתסריט הריאלי: ${inYear ? `תוך ${fc.ramp} חודשים` : 'יותר משנה'}`,
       ratio,
       how: [
         [`לקוחות חדשים בחודש היום (ממוצע ${today.n} חודשים)`, num(today.clients, 1)],
         ['צריך בחודש מלא', num(st.newClients, 1)],
         ['פי כמה', `פי ${num(Math.max(1, ratio), 1)}`],
-        [`ב-${fc.plan.grow}% יותר בכל חודש`, `${fc.ramp} חודשים`, true],
+        ['בתסריט הריאלי', fc.ramp != null ? `${fc.ramp} חודשים` : 'יותר מ-5 שנים', true],
       ],
-      rule: `עסק שמנוהל טוב גדל בממוצע עד ${fc.plan.grow}% יותר לקוחות בכל חודש. ירוק: בקצב הזה מגיעים לחודש מלא בתוך השנה. כתום: זה לוקח יותר משנה.`,
+      rule: 'ירוק: בתסריט הריאלי (קצב שמאט, עם חודשים חלשים) מגיעים לחודש מלא בתוך השנה. כתום: זה לוקח יותר משנה.',
     });
   }
   return out;
@@ -452,7 +475,7 @@ function causeOf(c) {
   if (c.id === 'goal') return c.tone === 'bad' ? `גם בחודש מלא ${c.a.replace('חסרים', 'חסרים עוד')} כדי להגיע ליעד.` : 'היעד מגיע, אבל רק אחרי השנה הראשונה.';
   if (c.id === 'time') return c.tone === 'bad' ? `כדי להגיע ליעד ${c.a.replace('צריך', 'צריך')} בחודש.` : 'השעות כמעט מלאות, אין מקום לחודש עמוס.';
   if (c.id === 'cash') return c.tone === 'bad' ? `${c.a} לפני שההכנסה מספיקה.` : 'הכסף בעסק יורד מתחת לכרית הביטחון בדרך.';
-  return `גם ב-${PACE.real}% יותר לקוחות בכל חודש, מגיעים לחודש מלא רק אחרי יותר משנה.`;
+  return 'גם בתסריט הריאלי, מגיעים לחודש מלא רק אחרי יותר משנה.';
 }
 export const scoreOf = (list) => list.reduce((x, c) => x + TONE_SCORE[c.tone], 0);
 

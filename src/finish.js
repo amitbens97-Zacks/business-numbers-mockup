@@ -81,7 +81,7 @@ export function DocScreen({ s, m }) {
       <${H} n="5">התחזית לשנה<//>
       <${ForecastChart} fc=${fc} goal=${s.goal} />
       <div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>
-      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), תוך ${fc.ramp} חודשים, ב-${fc.plan.grow}% יותר לקוחות בכל חודש.</p>
+      <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), ${fc.ramp != null && fc.ramp <= 12 ? `תוך ${fc.ramp} חודשים` : 'רק אחרי יותר משנה'}, לפי התסריט הריאלי.</p>
       <div class="mt-3"><${Checks} list=${m.checks} how=${false} /></div>
       ${s.applied.length > 0 &&
       html`<p class="mt-3 text-[15px] font-bold">מה שינית בדרך</p>

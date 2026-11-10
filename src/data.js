@@ -290,6 +290,7 @@ function base(extra) {
     annualGoal: null, // stage 3; null = 12 x the monthly goal
     mix: null, // null = the shark's suggestion
     assumptions: clone(DEFAULT_ASSUMPTIONS),
+    pace: null, // the user's edits to the scenario equation (calc.PACE_DEFAULT), by scenario
     applied: [],
     done: false,
     doneOn: null,

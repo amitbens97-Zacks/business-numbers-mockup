@@ -8,7 +8,7 @@ import { Money, Stepper, Section, Result } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, PACE, SCENARIO_KEYS,
+  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
 // ---------- part 3: the goal ----------
@@ -305,7 +305,7 @@ function Basis({ s, m }) {
     ['user', 'המספרים שלך', `הכסף בעסק, ההוצאות, המחירים, העלויות והשעות מחלקים 1-2, והיעד של ${fmt(s.goal)} בחודש מחלק 3.`],
     ['shopping-basket', 'התמהיל', `כמה מכל מוצר נמכר בחודש מלא (חלק 4). בחודש מלא העסק מכניס ${fmt(m.st.income)}.`],
     ['percent', 'שני אחוזים שאפשר לשנות', `${a.leadToCall}% מהפניות קובעות שיחה, ${a.closeRate}% מהשיחות קונות. ממוצע בתחום, עד שיהיו לך נתונים משלך (חלק 4).`],
-    ['trending-up', 'הדרך ליעד', `התסריט הריאלי: ${PACE.real}% יותר לקוחות בכל חודש, הקצב הממוצע של עסק שמנוהל טוב. תוך ${m.fc.ramp} חודשים מגיעים לחודש מלא, ואחר כך ממשיכים לגדול עד שהשעות מתמלאות.`],
+    ['trending-up', 'הדרך ליעד', `התסריט הריאלי: קצב שמתחיל ב-${paceOf(s, 'real').start}% ומאט בכל חודש, עם חודשים חלשים בחגים ובקיץ. ${m.fc.ramp != null && m.fc.ramp <= 12 ? `תוך ${m.fc.ramp} חודשים מגיעים לחודש מלא` : 'מגיעים לחודש מלא רק אחרי יותר משנה'}. את המשוואה אפשר לערוך (למעלה).`],
   ];
   return html`<details class="fb-panel mb-5 !p-4">
     <summary class="cursor-pointer text-[16px] font-bold">על מה הבדיקה מבוססת</summary>
@@ -372,55 +372,91 @@ function SharkChat({ m, onClose }) {
   <//>`;
 }
 
-// The three scenarios: same start, same equation (calc.rampPlan), only the pace changes.
+// The three scenarios: same start point, same equation (calc.rampPlan), different numbers.
 const SCEN = {
   real: { label: 'ריאלי', icon: 'target', on: 'border-brand-600 bg-brand-50', text: 'text-brand-600',
-    line: (g) => `הבסיס של התוכנית: עסק שמנוהל טוב גדל בממוצע עד ${g}% יותר לקוחות בכל חודש.` },
+    line: 'הבסיס של התוכנית: הצמיחה של עסק שמנוהל טוב, עם האטה וחודשים חלשים.' },
   low: { label: 'פסימי', icon: 'trending-down', on: 'border-warn bg-warn-50', text: 'text-warn',
-    line: (g) => `אם המכירות גדלות לאט יותר ממה שחשבנו: רק ${g}% יותר לקוחות בכל חודש.` },
+    line: 'אם הולך לאט יותר ממה שחשבנו: התחלה מאוחרת, צמיחה איטית וחודשים חלשים יותר.' },
   high: { label: 'אופטימי', icon: 'trending-up', on: 'border-money bg-money-50', text: 'text-money',
-    line: (g) => `אם הולך מעל הציפיות: ${g}% יותר לקוחות בכל חודש.` },
+    line: 'אם הולך מעל הציפיות: צמיחה מהירה, וחודשים חלשים פחות.' },
 };
 const inMonths = (n) => (n === 1 ? 'חודש אחד' : n === 2 ? 'חודשיים' : `${n} חודשים`);
+const inYear = (fc) => fc.ramp != null && fc.ramp <= 12;
 
-function ScenarioTabs({ all, value, onChange }) {
+function ScenarioTabs({ s, all, value, onChange }) {
   return html`<div role="tablist" aria-label="תסריט" class="mb-3 grid grid-cols-3 gap-2">
     ${SCENARIO_KEYS.map((k) => {
       const x = SCEN[k];
       const fc = all[k];
       const sel = value === k;
       return html`<button key=${k} type="button" role="tab" aria-selected=${sel} class=${cx('flex flex-col items-start rounded-xl border-[1.5px] p-2.5 text-start transition cursor-pointer', sel ? x.on : 'border-line bg-white hover:border-brand-300')} onClick=${() => onChange(k)}>
-        <span class=${cx('flex items-center gap-1 text-[14px] font-bold', sel ? x.text : 'text-ink')}><${Icon} name=${x.icon} size=${15} />${x.label}</span>
-        <span class="whitespace-nowrap font-display text-[16px] font-black leading-tight tabular-nums sm:text-[19px]">${fc.ramp <= 12 ? inMonths(fc.ramp) : 'יותר משנה'}</span>
-        <span class="text-[12px] text-muted">${fc.plan.grow}% בכל חודש</span>
+        <span class=${cx('flex items-center gap-1 text-[14px] font-bold', sel ? x.text : 'text-ink')}><${Icon} name=${x.icon} size=${15} />${x.label}${paceEdited(s, k) ? html`<span class="text-[11px] font-semibold text-muted">· נערך</span>` : ''}</span>
+        <span class="whitespace-nowrap font-display text-[16px] font-black leading-tight tabular-nums sm:text-[19px]">${inYear(fc) ? inMonths(fc.ramp) : 'יותר משנה'}</span>
+        <span class="text-[12px] text-muted">עד חודש מלא</span>
       </button>`;
     })}
   </div>`;
 }
 
-// The why of one scenario, under "איך זה חושב": the full month, the sentence, the lines.
-function ScenarioHow({ s, fc }) {
+// The equation of the selected scenario, in plain words, with its four numbers editable.
+const FIELDS = [
+  ['start', 'קצב הצמיחה בהתחלה', '%', 'כמה יותר לקוחות מהחודש שלפני'],
+  ['slow', 'בכל חודש הקצב יורד ב-', '%', 'מהקצב של החודש הקודם'],
+  ['dip', 'בחודש חלש המכירות יורדות ב-', '%', 'פסח, החופש הגדול, חגי תשרי'],
+  ['delay', 'חודשים עד שהצמיחה מתחילה', 'חודשים', 'זמן התארגנות, בלי צמיחה'],
+];
+function Equation({ s, up, fc, notify }) {
+  const [edit, setEdit] = useState(false);
+  const key = fc.key;
+  const P = paceOf(s, key);
   const p = fc.plan;
-  const need = clientsText(p.need);
-  const pace = fc.key === 'real' ? `עסק ${p.fresh ? 'חדש ' : ''}שמנוהל טוב גדל בממוצע עד ${p.grow}% יותר לקוחות בכל חודש` : `בתסריט ה${SCEN[fc.key].label}: ${p.grow}% יותר לקוחות בכל חודש`;
-  const when = `וככה זה ${inMonths(fc.ramp)}${fc.ramp > 12 ? ', יותר מהשנה שבתחזית' : ''}`;
-  const why = p.fresh
-    ? `מתחילים מלקוח ראשון, ובחודש מלא צריך ${need} חדשים בחודש. ${pace}, ${when}.`
-    : p.ratio <= 1
-      ? `כבר היום מגיעים מספיק לקוחות חדשים (${need} בחודש), אז החודש המלא כבר כאן.`
-      : `היום ${Math.round(p.from * 10) === 10 ? 'מגיע לקוח חדש אחד' : `מגיעים ${clientsText(p.from)} חדשים`} בחודש, ובחודש מלא צריך ${need}. ${pace}, ${when}.`;
-  const after = p.cap > 1.01
-    ? `אחרי שמגיעים: ממשיכים לגדול באותו קצב, עד שהשעות שלך מתמלאות (${num(s.assumptions.hoursMonth)} שעות בחודש). שם המכירות נעצרות.`
-    : 'אחרי שמגיעים: השעות שלך כבר כמעט מלאות, אז המכירות נשארות בגובה של חודש מלא.';
+  const pct = (x) => `${num(x * 100, 1)}%`;
+  const weak = weakIn(fc.rows).map(([k, why]) => `${monthName(k)} (${why})`).join(', ');
+  const set = (f, v) => up((d) => (d.pace = { ...(d.pace || {}), [key]: { ...paceOf(d, key), [f]: v ?? 0 } }));
+  const reset = () => { up((d) => { const x = { ...(d.pace || {}) }; delete x[key]; d.pace = x; }); notify(`חזרת למשוואה המקורית של התסריט ה${SCEN[key].label}`, 'rotate-ccw'); };
+  const steps = [
+    ['flag', p.fresh
+      ? `${P.delay > 0 ? `${inMonths(P.delay)} של התארגנות, ואז ` : ''}לקוח ראשון${P.delay > 0 ? '' : ' כבר בחודש הראשון'}.`
+      : `מתחילים מהיום: ${clientsText(p.from)} חדשים בחודש${P.delay > 0 ? `, בלי שינוי ב${inMonths(P.delay)} הראשונים` : ''}.`],
+    ['trending-up', `כל חודש יותר לקוחות מהחודש שלפניו. הקצב מתחיל ב-${P.start}% ויורד בכל חודש ב-${P.slow}% מעצמו: אחרי חצי שנה ${pct(growAt(P, 7))}, אחרי שנה ${pct(growAt(P, 13))}.`],
+    ['calendar-x', `בחודשים חלשים המכירות יורדות ב-${P.dip}% וחוזרות בחודש שאחרי${weak ? `: ${weak}` : ''}.`],
+    ['clock', p.cap > 1.01 ? `התקרה: השעות שלך (${num(s.assumptions.hoursMonth)} בחודש). כשהן מלאות, המכירות נעצרות.` : 'התקרה: השעות שלך כבר כמעט מלאות בחודש מלא, אז מעליו כמעט אין לאן לגדול.'],
+  ];
+  return html`<div class="mb-3 rounded-xl border border-line bg-canvas p-3">
+    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+      <b class="text-[14px]">המשוואה של התסריט ה${SCEN[key].label}</b>
+      <span class="flex items-center gap-3">
+        ${paceEdited(s, key) && html`<button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${reset}>להחזיר למקור</button>`}
+        <button type="button" aria-expanded=${edit} class="inline-flex items-center gap-1 text-[13px] font-bold text-brand-600 cursor-pointer" onClick=${() => setEdit(!edit)}><${Icon} name=${edit ? 'chevron-up' : 'pencil'} size=${14} />${edit ? 'סגירה' : 'לערוך'}</button>
+      </span>
+    </div>
+    <ol class="flex flex-col gap-1.5 text-[14px]">
+      ${steps.map(([icon, text]) => html`<li key=${icon} class="flex items-start gap-2"><${Icon} name=${icon} size=${16} class="mt-0.5 shrink-0 text-brand-600" /><span>${text}</span></li>`)}
+    </ol>
+    ${edit && html`<div class="rise mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-2">
+      ${FIELDS.map(([f, label, suffix, hint]) => html`<label key=${f} class="flex flex-col gap-1 rounded-lg bg-white p-2.5 ring-1 ring-line">
+        <span class="flex items-baseline justify-between gap-2 text-[13px] font-bold">${label}<small class="font-semibold text-muted">במקור ${PACE_DEFAULT[key][f]}</small></span>
+        <${Money} suffix=${suffix} label=${label} value=${P[f]} onChange=${(v) => set(f, Math.min(f === 'delay' ? 6 : 100, v ?? 0))} />
+        <span class="text-[12px] text-muted">${hint}</span>
+      </label>`)}
+      <p class="text-[12px] text-muted sm:col-span-2">השינוי עובר מיד לגרף ולמספרים.${key === 'real' ? ' התסריט הריאלי הוא הבסיס של הבדיקות, אז גם הן מתעדכנות.' : ''}</p>
+    </div>`}
+  </div>`;
+}
+
+// The why of one scenario, under "איך זה חושב": the full month and the month-by-month level.
+function ScenarioHow({ fc }) {
+  const p = fc.plan;
+  const lines = fc.rows.slice(0, Math.min(12, (fc.ramp || 12) + 1)).map((r, i) => [
+    `${monthName(r.key)}${weakIn([r]).length ? ' (חודש חלש)' : ''}`,
+    `${clientsText(Math.round(p.need * r.f * 10) / 10)} · ${num(r.f * 100)}%`,
+    i === fc.reachIdx,
+  ]);
   return html`<${How} class="mb-2">
-    <p class="mb-1">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(fc.st.income)} בחודש.</p>
-    <p class="mb-1">${why}</p>
-    <${CalcLines}
-      lines=${p.fresh
-        ? [['לקוחות חדשים שצריך בחודש מלא', num(p.need, 1)], ['בחודש הראשון', 'לקוח אחד'], [`ועוד ${p.grow}% בכל חודש`, `${num(p.raw, 1)} חודשים`], ['מעוגל למעלה', inMonths(fc.ramp), true]]
-        : [['לקוחות חדשים בחודש היום', num(p.from, 1)], ['צריך בחודש מלא', num(p.need, 1)], ['פי', num(Math.max(1, p.ratio), 1)], [`ועוד ${p.grow}% בכל חודש`, `${num(Math.max(0, p.raw), 1)} חודשים`], ['מעוגל למעלה', inMonths(fc.ramp), true]]}
-      note=${`בכל חודש: הלקוחות החדשים של החודש הקודם × ${num(1 + p.grow / 100, 1)}, עד שמגיעים ל-${num(p.need, 1)}. ${after}`}
-    />
+    <p class="mb-1">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(fc.st.income)} בחודש. בחודש מלא צריך ${clientsText(p.need)} חדשים.</p>
+    <p class="mb-1">${p.fresh ? 'מתחילים מלקוח ראשון' : `היום מגיעים ${clientsText(p.from)} חדשים בחודש`}, וכל חודש מחושב מהחודש שלפניו לפי המשוואה. האחוז = כמה מהחודש המלא נמכר.</p>
+    <${CalcLines} lines=${lines} note=${inYear(fc) ? `החודש המודגש: הראשון שמגיע לחודש מלא.` : `בשנה הזאת לא מגיעים לחודש מלא${fc.ramp ? `. לפי המשוואה זה קורה אחרי ${inMonths(fc.ramp)}` : ''}.`} />
   <//>`;
 }
 
@@ -450,10 +486,11 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
         ].map(([v, label, icon]) => html`<button key=${label} type="button" role="tab" aria-selected=${table === v} class=${cx('flex h-8 items-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-bold cursor-pointer', table === v ? 'bg-brand-600 text-white' : 'text-muted')} onClick=${() => setTable(v)}><${Icon} name=${icon} size=${15} />${label}</button>`)}
       </div>`}
     >
-      <${ScenarioTabs} all=${all} value=${scen} onChange=${setScen} />
-      <p class="text-[14px] text-muted">${SCEN[scen].line(fc.plan.grow)}</p>
-      <p class="mt-1 font-display text-[24px] font-black leading-tight">${reach ? html`תוך ${inMonths(fc.ramp)}<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : html`לא בשנה הקרובה<span class="text-[17px] font-bold text-muted"> · בערך ${inMonths(fc.ramp)}</span>`}</p>
-      <${ScenarioHow} s=${s} fc=${fc} />
+      <${ScenarioTabs} s=${s} all=${all} value=${scen} onChange=${setScen} />
+      <p class="mb-2 text-[14px] text-muted">${SCEN[scen].line}</p>
+      <${Equation} s=${s} up=${up} fc=${fc} notify=${notify} />
+      <p class="mt-1 font-display text-[24px] font-black leading-tight">${reach ? html`תוך ${inMonths(fc.ramp)}<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : html`לא בשנה הקרובה<span class="text-[17px] font-bold text-muted"> · ${fc.ramp ? `בערך ${inMonths(fc.ramp)}` : 'בקצב הזה לא מגיעים'}</span>`}</p>
+      <${ScenarioHow} fc=${fc} />
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
       <div class="mt-4 grid gap-2 sm:grid-cols-2">
         <p class=${cx('rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}><span class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</span><b class="font-display text-[20px] tabular-nums">${fmt(fc.yearProfit)}</b> <span class="text-[14px]">מול יעד של ${fmt(fc.annualGoal)}:</span> <b class=${cx('text-[14px]', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b></p>
