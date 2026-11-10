@@ -227,6 +227,7 @@ export const PACE_DEFAULT = {
   high: { start: 35, slow: 4, dip: 10, delay: 0 },
 };
 export const SCENARIO_KEYS = ['real', 'low', 'high'];
+export const SCEN_NAME = { real: 'הריאלי', low: 'הפסימי', high: 'האופטימי' };
 // Weak months by calendar month (the mockup's year). The system takes them from the Hebrew
 // calendar of each year: Tishrei falls in September in some years and October in others.
 export const WEAK = { 4: 'פסח', 8: 'החופש הגדול', 10: 'חגי תשרי' };
@@ -432,7 +433,7 @@ export function checks(s, mix, fc) {
       q: 'הקצב סביר?',
       tone: 'info',
       a: `${num(st.newClients, 1)} לקוחות חדשים בחודש`,
-      sub: fc.ramp != null && fc.ramp <= 12 ? `בתסריט הריאלי מגיעים לזה תוך ${fc.ramp} חודשים` : 'בתסריט הריאלי זה לוקח יותר משנה',
+      sub: fc.ramp != null && fc.ramp <= 12 ? `בתסריט ${SCEN_NAME[fc.key]} מגיעים לזה תוך ${fc.ramp} חודשים` : `בתסריט ${SCEN_NAME[fc.key]} זה לוקח יותר משנה`,
       how: [
         ['פניות שמגיעות אליך בחודש', num(st.leads)],
         [`${s.assumptions.leadToCall}% מהן קובעות שיחה`, `${num(st.calls, 1)} שיחות`],
@@ -449,15 +450,16 @@ export function checks(s, mix, fc) {
       q: 'הקצב סביר?',
       tone,
       a: ratio <= 1 ? 'כן, כמו היום' : `פי ${num(ratio, 1)} ממה שיש היום`,
-      sub: ratio <= 1 ? `היום ${clientsText(today.clients)} בחודש, וצריך ${num(st.newClients, 1)}` : `בתסריט הריאלי: ${inYear ? `תוך ${fc.ramp} חודשים` : 'יותר משנה'}`,
+      sub: ratio <= 1 ? `היום ${clientsText(today.clients)} בחודש, וצריך ${num(st.newClients, 1)}` : `בתסריט ${SCEN_NAME[fc.key]}: ${inYear ? `תוך ${fc.ramp} חודשים` : 'יותר משנה'}`,
       ratio,
       how: [
         [`לקוחות חדשים בחודש היום (ממוצע ${today.n} חודשים)`, num(today.clients, 1)],
         ['צריך בחודש מלא', num(st.newClients, 1)],
         ['פי כמה', `פי ${num(Math.max(1, ratio), 1)}`],
-        ['בתסריט הריאלי', fc.ramp != null ? `${fc.ramp} חודשים` : 'יותר מ-5 שנים', true],
+        [`בתסריט ${SCEN_NAME[fc.key]}`, fc.ramp != null ? `${fc.ramp} חודשים` : 'יותר מ-5 שנים', true],
       ],
-      rule: 'ירוק: בתסריט הריאלי (קצב שמאט, עם חודשים חלשים) מגיעים לחודש מלא בתוך השנה. כתום: זה לוקח יותר משנה.',
+      rule: `ירוק: בתסריט ${SCEN_NAME[fc.key]} (קצב שמאט, עם חודשים חלשים) מגיעים לחודש מלא בתוך השנה. כתום: זה לוקח יותר משנה.`,
+      key: fc.key,
     });
   }
   return out;
@@ -475,15 +477,16 @@ function causeOf(c) {
   if (c.id === 'goal') return c.tone === 'bad' ? `גם בחודש מלא ${c.a.replace('חסרים', 'חסרים עוד')} כדי להגיע ליעד.` : 'היעד מגיע, אבל רק אחרי השנה הראשונה.';
   if (c.id === 'time') return c.tone === 'bad' ? `כדי להגיע ליעד ${c.a.replace('צריך', 'צריך')} בחודש.` : 'השעות כמעט מלאות, אין מקום לחודש עמוס.';
   if (c.id === 'cash') return c.tone === 'bad' ? `${c.a} לפני שההכנסה מספיקה.` : 'הכסף בעסק יורד מתחת לכרית הביטחון בדרך.';
-  return 'גם בתסריט הריאלי, מגיעים לחודש מלא רק אחרי יותר משנה.';
+  return `גם בתסריט ${SCEN_NAME[c.key || 'real']}, מגיעים לחודש מלא רק אחרי יותר משנה.`;
 }
 export const scoreOf = (list) => list.reduce((x, c) => x + TONE_SCORE[c.tone], 0);
 
 // ---------- everything at once ----------
 
-export function model(s) {
+// key = the scenario (realistic by default: the summary and everything outside part 5 use it).
+export function model(s, key = 'real') {
   const mix = mixOf(s);
-  const fc = forecast(s, mix);
+  const fc = forecast(s, mix, key);
   const list = checks(s, mix, fc);
   return { mix, fc, st: fc.st, checks: list, verdict: verdict(list), score: scoreOf(list) };
 }
@@ -494,8 +497,8 @@ export function model(s) {
 
 const freeze = (s) => ({ ...s, mix: mixOf(s), applied: s.applied });
 
-export function fixes(s) {
-  const now = model(s);
+export function fixes(s, key = 'real') {
+  const now = model(s, key);
   if (now.verdict.tone === 'ok') return [];
   const mix = now.mix;
   const ps = paidProducts(s);
@@ -595,7 +598,7 @@ export function fixes(s) {
 
   return c
     .map((fx) => {
-      const after = model(fx.make(s));
+      const after = model(fx.make(s), key);
       const gap = (m) => Math.max(0, (s.goal || 0) - m.st.profit);
       // A lower goal is the last resort: it ranks after the fixes that change the business.
       const impact = (after.score - now.score) * 10000 + (gap(now) - gap(after)) + (after.verdict.tone !== now.verdict.tone ? 50000 : 0) - (fx.id === 'goal' ? 45000 : 0) + (after.score > now.score ? fx.boost || 0 : 0);

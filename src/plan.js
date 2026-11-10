@@ -8,7 +8,7 @@ import { Money, Stepper, Section, Result } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
+  paidProducts, perHour, isSharkMix, suggestMix, taxRate, fixes, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
 // ---------- part 3: the goal ----------
@@ -320,13 +320,14 @@ function Basis({ s, m }) {
   </details>`;
 }
 
-function Verdict({ v }) {
+function Verdict({ v, scen }) {
   const t = TONE[v.tone];
   return html`<div class=${cx('rise mb-4 flex items-center gap-4 rounded-2xl border-[1.5px] p-4 md:p-5', t.ring)} role="status">
     <${SharkAvatar} size=${56} mood=${v.tone === 'ok' ? 'happy' : v.tone === 'warn' ? 'thinking' : 'alert'} />
     <div>
       <p class=${cx('font-display text-[26px] font-black leading-tight md:text-[30px]', t.text)}>${v.title}</p>
       <p class="text-[16px]">${v.cause}</p>
+      ${scen && html`<p class="mt-0.5 text-[13px] font-bold text-muted">לפי התסריט ${SCEN_NAME[scen]}</p>`}
     </div>
   </div>`;
 }
@@ -464,9 +465,12 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
   const [table, setTable] = useState(false);
   const [chat, setChat] = useState(false);
   const [scen, setScen] = useState('real');
-  const all = { real: m.fc, low: forecast(s, m.mix, 'low'), high: forecast(s, m.mix, 'high') };
+  // Everything in part 5 follows the chosen scenario: the verdict, the checks and the fixes.
+  const ms = { real: m, low: model(s, 'low'), high: model(s, 'high') };
+  const all = { real: m.fc, low: ms.low.fc, high: ms.high.fc };
   const fc = all[scen];
-  const list = fixes(s);
+  const mk = ms[scen];
+  const list = fixes(s, scen);
   const ceiling = m.fc.ceilingMonth != null ? m.fc.rows[m.fc.ceilingMonth] : null;
   const yearOk = fc.yearProfit >= fc.annualGoal;
   const reach = fc.reachIdx >= 0 ? fc.rows[fc.reachIdx] : null;
@@ -475,7 +479,7 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
   return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
     <${StepHeading} n="5" eyebrow=${`חלק 5 מתוך 5 · ${PARTS[4]}`} title=${['השנה ', 'הקרובה', ' במספרים']} sub="תחזית לשנים-עשר החודשים הבאים, ובדיקה אם המודל מחזיק." />
 
-    <${Verdict} v=${m.verdict} />
+    <${Verdict} v=${mk.verdict} scen=${scen} />
 
     <${Section}
       title="מתי מגיעים ליעד ההכנסה?"
@@ -509,10 +513,10 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
     ${ceiling &&
     html`<p class="mb-5 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn-50 p-3 text-[15px] text-warn"><${Icon} name="triangle-alert" size=${19} class="mt-0.5 shrink-0" /><span><b>תקרת עוסק פטור:</b> בקצב הזה, ב${monthYear(ceiling.key)} ההכנסות עוברות ${fmt(SETTINGS.exemptCeiling)} ב-12 חודשים. משם צריך להיות עוסק מורשה, ו-${SETTINGS.vatPct}% מכל מחיר עוברים למדינה. כדאי לתאם עם רואה החשבון מראש.</span></p>`}
 
-    <${Section} title="הבדיקות"><${Checks} list=${m.checks} /><//>
+    <${Section} title="הבדיקות" sub=${`לפי התסריט ${SCEN_NAME[scen]}. כשמחליפים תסריט למעלה, הבדיקות מתעדכנות.`}><${Checks} list=${mk.checks} /><//>
 
     ${list.length > 0 &&
-    html`<${Section} title="מה אפשר לשנות" sub="מסודר לפי מה שמשפיע הכי הרבה. כל שינוי מראה את הבדיקות לפני ואחרי, ואפשר לבטל.">
+    html`<${Section} title="מה אפשר לשנות" sub=${`מסודר לפי מה שמשפיע הכי הרבה בתסריט ${SCEN_NAME[scen]}. כל שינוי מראה את הבדיקות לפני ואחרי, ואפשר לבטל.`}>
       <ul class="grid gap-3 md:grid-cols-3">${list.map((fx) => html`<${FixCard} key=${fx.id} fx=${fx} onApply=${() => onApply(fx)} />`)}</ul>
     <//>`}
     ${s.applied.length > 0 &&
@@ -523,7 +527,7 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply }) {
     <${Basis} s=${s} m=${m} />
     <div class="flex flex-wrap items-center gap-3">
       <${Button} variant="secondary" onClick=${() => setChat(true)}><${SharkAvatar} size=${26} />לדבר על זה עם הכריש<//>
-      ${m.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה. התוכנית תראה מה עוד לא מסתדר.</p>`}
+      ${mk.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה. התוכנית תראה מה עוד לא מסתדר.</p>`}
     </div>
     ${chat && html`<${SharkChat} m=${m} onClose=${() => setChat(false)} />`}
   </div>`;
