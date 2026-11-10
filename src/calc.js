@@ -91,8 +91,11 @@ export const vatRate = () => SETTINGS.vatPct / 100;
 // switch when the money really passes the ceiling. The step only informs (what the full
 // month brings in a year, and what is left as licensed), and recommends switching only when
 // the business is over the ceiling already today (stages 2-3, by today's average).
+// The least the business has to bring in to keep the goal (part 4's "needed"), in a year.
+// Not the shark's mix: whole sales usually bring in a bit more than the least.
 export const fullYearGross = (s) => steady(s, mixOf(s)).gross * 12;
-export const overCeiling = (s) => s.entity === 'exempt' && fullYearGross(s) > SETTINGS.exemptCeiling;
+export const neededYear = (s) => steady(s, mixOf(s)).needed * 12;
+export const overCeiling = (s) => s.entity === 'exempt' && neededYear(s) > SETTINGS.exemptCeiling;
 export const overCeilingToday = (s) => {
   if (s.entity !== 'exempt' || s.stage === 'setup') return false;
   const a = todayAvg(s);

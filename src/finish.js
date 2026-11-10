@@ -7,7 +7,7 @@ import { USER, STEP, SETTINGS, g, stageOf, ENTITIES, FINANCE_URL, FINANCE_SCENAR
 import { cashText } from './parts.js';
 import {
   fmt, num, monthYear, todayText, todayAvg, runway, fixedMonthly, setupSummary, cushionTarget, setAsideMonthly,
-  paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling, asLicensed,
+  paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling, asLicensed, neededYear,
 } from './calc.js';
 import { ForecastChart, ForecastLegend } from './chart.js';
 import { Checks, Verdict, Quarters } from './plan.js';
@@ -62,7 +62,7 @@ export function DocScreen({ s, m }) {
       <table class="w-full text-[15px]"><tbody>
         <${Row} k="נשאר לך בכל חודש" v=${fmt(s.goal)} strong />
         <${Row} k="בשנה" v=${fmt(fc.annualGoal)} />
-        ${overCeiling(s) && html`<${Row} k="תקרת עוסק פטור" v=${`בחודש מלא עוברים אותה. כעוסק מורשה יישארו ${fmt(asLicensed(s).left)} בחודש`} />`}
+        ${overCeiling(s) && html`<${Row} k="תקרת עוסק פטור" v=${`כדי להגיע ליעד צריך להכניס לפחות ${fmt(neededYear(s))} בשנה, מעל התקרה. כעוסק מורשה יישארו ${fmt(asLicensed(s).left)} בחודש`} />`}
         <${Row} k="מס וביטוח לאומי" v=${`${taxPctOf(s)}% מהרווח (${ent})`} />
         ${s.stage === 'active' && html`<${Row} k="כרית ביטחון" v=${`${fmt(cushionTarget(s))}${setAsideMonthly(s) ? ` · ${fmt(setAsideMonthly(s))} בחודש` : ' · מלאה'}`} />`}
       </tbody></table>

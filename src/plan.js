@@ -7,7 +7,7 @@ import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
 import { Money, Stepper, Section, Result, YesNo } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
-  fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, overCeilingToday, asLicensed, fullYearGross, netPrice,
+  fmt, num, monthName, monthYear, todayAvg, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, overCeilingToday, asLicensed, fullYearGross, neededYear, netPrice,
   paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, KIDS, kidPoints, reservePoints, DEGREE_PTS, OLEH_PTS, SETTLE, fixes, withPicks, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
@@ -48,7 +48,18 @@ export function GoalScreen({ s, up, m }) {
             <${Button} variant="mini" onClick=${() => up((d) => (d.entity = 'licensed'), 'עברת לעוסק מורשה בתוכנית')}>לחשב כעוסק מורשה<//>
           </div>`
         : overCeiling(s) &&
-          html`<p class="mt-3 flex items-start gap-2 rounded-xl border border-brand-300 bg-brand-50 p-3 text-[14px]"><${Icon} name="info" size=${18} class="mt-0.5 shrink-0 text-brand-600" /><span><b>כדאי לדעת:</b> בחודש מלא העסק יכניס בערך ${fmt(m.st.gross * 12)} בשנה, מעל תקרת עוסק פטור (${fmt(SETTINGS.exemptCeiling)}). מתחילים כעוסק פטור, ועוברים לעוסק מורשה כשההכנסות מתקרבות לתקרה. אז ${SETTINGS.vatPct}% מכל מחיר יעברו למע"מ, ובחודש מלא יישארו לך ${fmt(asLicensed(s).left)} במקום ${fmt(m.st.profit - m.st.setAside)}.</span></p>`}
+          html`<div class="mt-3 flex items-start gap-2 rounded-xl border border-brand-300 bg-brand-50 p-3 text-[14px]"><${Icon} name="info" size=${18} class="mt-0.5 shrink-0 text-brand-600" /><div class="min-w-0 flex-1">
+            <p><b>כדאי לדעת:</b> כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס לפחות ${fmt(m.st.needed)} בחודש, כלומר ${fmt(neededYear(s))} בשנה. זה מעל תקרת עוסק פטור (${fmt(SETTINGS.exemptCeiling)}). מתחילים כעוסק פטור, ועוברים לעוסק מורשה כשההכנסות מתקרבות לתקרה. אז ${SETTINGS.vatPct}% מכל מחיר יעברו למע"מ, ובחודש מלא יישארו לך ${fmt(asLicensed(s).left)} במקום ${fmt(m.st.profit - m.st.setAside)}.</p>
+            <${How}><${CalcLines} lines=${[
+              ['היעד: מה שנשאר לך בחודש', fmt(s.goal)],
+              m.st.setAside > 0 && ['+ לכרית הביטחון', fmt(m.st.setAside)],
+              [`+ מס וביטוח לאומי (${taxPctOf(s)}% מהרווח)`, fmt(m.st.beforeTax - s.goal - m.st.setAside)],
+              ['+ הוצאות קבועות', fmt(m.st.fixed)],
+              ['+ עלויות המוצרים', fmt(m.st.cogs)],
+              ['לפחות בחודש', fmt(m.st.needed), true],
+              ['× 12 חודשים', fmt(neededYear(s)), true],
+            ].filter(Boolean)} note=${`התמהיל בחלק 4 בנוי ממכירות שלמות, אז הוא מכניס קצת יותר: ${fmt(m.st.gross)} בחודש.`} /><//>
+          </div></div>`}
     <//>
 
     <${TaxCalc} s=${s} up=${up} />
@@ -149,6 +160,10 @@ function TaxCalc({ s, up }) {
     ${!more && html`<button type="button" aria-expanded="false" class="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-dashed border-brand-300 bg-white px-3 py-2.5 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => setMore(true)}>
       <span><b class="block text-[15px] text-brand-600">עוד זכויות שמורידות את המס</b><small class="text-[13px] text-muted">שחרור מהצבא, תואר, מילואים, עלייה, הורה יחיד, יישוב עם הנחה</small></span>
       <${Icon} name="chevron-down" size=${20} class="shrink-0 text-brand-600" />
+    </button>`}
+    ${more && html`<button type="button" aria-expanded="true" class="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-brand-300 bg-brand-50 px-3 py-2.5 text-start hover:border-brand-600 cursor-pointer" onClick=${() => setMore(false)}>
+      <b class="text-[15px] text-brand-600">עוד זכויות שמורידות את המס</b>
+      <span class="flex items-center gap-1 text-[13px] font-bold text-brand-600">להקטין<${Icon} name="chevron-up" size=${18} /></span>
     </button>`}
     ${more && html`<div class="rise mt-3 grid gap-3 md:grid-cols-2">
       <${Right} title=${`${g('השתחררת', 'השתחררת')} מצה"ל או משירות לאומי ב-3 השנים האחרונות?`} hint=${`${c.gender === 'f' ? '22' : '23'} חודשי שירות ומעלה (שירות לאומי: 24): 2 נקודות. 12 חודשים ומעלה: נקודה.`} pts=${[0, 1, 2][c.soldier || 0]}>
