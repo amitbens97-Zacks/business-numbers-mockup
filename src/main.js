@@ -297,9 +297,8 @@ function App({ view: shellView, onViewChange }) {
         />`
       : html`<${BottomBar}
           back=${screen !== 'opening' && html`<${Button} variant="secondary" onClick=${() => toScreen(prevScreen)}>חזרה<//>`}
-          extra=${screen === 'goal' && html`<span key=${taxPctOf(s)} class="rise inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-[14px] font-bold text-brand-600" role="status" aria-live="polite"><${Icon} name="percent" size=${15} />מס וביטוח לאומי: <span class="font-display text-[17px] font-black tabular-nums">${taxPctOf(s)}%</span></span>`}
           status=${html`<${Status} undo=${null} reason=${reason} save=${inParts ? save : null} hint=${screen === 'forecast' && m.verdict.tone !== 'ok' ? (m.verdict.tone === 'bad' ? 'אפשר לסיים גם עם בדיקה אדומה' : 'אפשר לסיים גם ככה') : null} />`}
-          primary=${html`<${PrimaryButton}
+          primary=${html`<div class="flex items-center gap-3 max-md:flex-col max-md:items-stretch max-md:[&>button]:w-full">${screen === 'goal' && html`<span key=${taxPctOf(s)} class="rise inline-flex shrink-0 justify-center items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-[14px] font-bold text-brand-600" role="status" aria-live="polite"><${Icon} name="percent" size=${15} />מס וביטוח לאומי: <span class="font-display text-[17px] font-black tabular-nums">${taxPctOf(s)}%</span></span>`}<${PrimaryButton}
             label=${label}
             check=${screen === 'doc'}
             disabled=${!!reason}
@@ -308,7 +307,7 @@ function App({ view: shellView, onViewChange }) {
               if (screen === 'doc') up((d) => ((d.done = true), (d.doneOn = todayText())));
               toScreen(next);
             }}
-          />`}
+          /></div>`}
         />`;
   const line = sharkLine(screen, s, m);
   return shell(html`${top}
