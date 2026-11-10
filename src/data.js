@@ -59,7 +59,7 @@ export const stageOf = (id) => STAGES.find((s) => s.id === id);
 // FlowBiz settings (one place in the admin, updated each year; never in the code).
 export const SETTINGS = {
   vatPct: 18,
-  exemptCeiling: 120000,
+  exemptCeiling: 122833, // 2026
   taxPct: { exempt: 15, licensed: 25 },
 };
 

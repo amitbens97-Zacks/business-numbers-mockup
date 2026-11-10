@@ -707,6 +707,20 @@ export function fixes(s, key = 'real') {
       make: (x) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + amt } }),
       boost: amt <= 3000 ? 60000 : 0,
     });
+  } else if (low && byId.cash.tone === 'warn' && now.fc.cushion > low.cash) {
+    // Below the cushion on the way (stage 3): the gap up front keeps the cushion whole.
+    // The smallest round sum that keeps the cushion (money in also changes what goes to it).
+    const withIn = (x, n) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + n } });
+    let amt = Math.ceil((now.fc.cushion - low.cash) / 500) * 500;
+    for (let k = 0; k < 20 && model(withIn(s, amt), key).checks.find((x) => x.id === 'cash').tone !== 'ok'; k++) amt += 500;
+    c.push({
+      id: 'cash-in',
+      icon: 'piggy-bank',
+      title: `להכניס לעסק ${fmt(amt)} מראש`,
+      sub: `ב${monthName(low.key)} נשארים בעסק ${fmt(low.cash)}, מתחת לכרית של ${fmt(now.fc.cushion)}. סכום קטן עכשיו שומר על הכרית כל השנה`,
+      make: (x) => ({ ...freeze(x), bank: { ...x.bank, amount: (x.bank.amount || 0) + amt } }),
+      boost: amt <= 3000 ? 60000 : 0,
+    });
   }
 
   // Drop what can wait. Never marketing that brings the leads, never what the law needs:
