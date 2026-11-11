@@ -765,6 +765,7 @@ function Summary({ s, up }) {
     html`<div class=${cx('mt-3 rounded-xl p-3', avg.left < 0 ? 'bg-warn-50' : 'bg-brand-50')}>
       <p class="text-[13px] font-bold text-muted">בחודש ממוצע היום נשארים</p>
       <p class=${cx('font-display text-[26px] font-black leading-tight tabular-nums', avg.left < 0 ? 'text-warn' : 'text-brand-600')}>${fmt(avg.left)}</p>
+      ${s.goal > 0 && html`<p class=${cx('text-[13px] font-bold', avg.left >= s.goal ? 'text-money' : 'text-ink')}>${avg.left >= s.goal ? `מעל היעד שלך (${fmt(s.goal)}) כבר היום` : `חסרים ${fmt(s.goal - avg.left)} ליעד שלך (${fmt(s.goal)}). בחלק 3 נראה מה למכור.`}</p>`}
       <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
     </div>`}
     ${showRw &&
@@ -841,7 +842,24 @@ export function TodayScreen({ s, up, onStage }) {
       </div>
       <aside id="today-summary" class="scroll-mt-4 lg:sticky lg:top-4"><${Summary} s=${s} up=${up} /></aside>
     </div>
+    <${MiniSummary} s=${s} />
   </div>`;
+}
+
+// Amit, 11.11: on the phone "התמונה עד עכשיו" sits under all the sections, so a small bar
+// stays at the bottom of the screen with the one number that matters, and opens the full picture.
+function MiniSummary({ s }) {
+  const rw = runway(s);
+  const showRw = rw && (fixedMonthly(s) > 0 || (s.seen || []).includes('expenses'));
+  if (s.bank.amount == null) return null;
+  const text = showRw
+    ? rw.free <= 0 ? 'אין כסף פנוי' : `הכסף מחזיק ${rw.until ? `עד ${monthYear(rw.until)}` : 'יותר משנתיים'}`
+    : `כסף בעסק היום: ${fmt(s.bank.amount)}`;
+  const warn = showRw && rw.months < 3;
+  return html`<button type="button" class=${cx('sticky bottom-3 z-[4] me-auto mt-4 flex w-[calc(100%-60px)] max-w-[420px] items-center justify-between gap-2 rounded-full px-3.5 py-2.5 text-[14px] font-bold shadow-[0_6px_16px_rgba(45,62,102,.18)] ring-1 cursor-pointer lg:hidden', warn ? 'bg-warn-50 ring-warn/40' : 'bg-white ring-line')}
+    onClick=${() => document.getElementById('today-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+    <span class="min-w-0 truncate">${text}</span><span class="flex shrink-0 items-center gap-1 whitespace-nowrap text-[13px] text-brand-600">לפירוט<${Icon} name="arrow-down" size=${14} /></span>
+  </button>`;
 }
 
 export const ALL_SECTIONS = ['bank', 'setup', 'history', 'regular', 'toCome', 'expenses', 'setupDone', 'cushion'];

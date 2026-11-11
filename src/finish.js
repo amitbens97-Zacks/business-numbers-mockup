@@ -70,7 +70,7 @@ export function DocScreen({ s, m }) {
         <${Row} k="פניות שצריכות להגיע אליך בחודש" v=${`${num(st.leads)} (${num((st.leads * 12) / 52, 1)} בשבוע)`} />
         <${Row} k="שיחות מכירה בחודש" v=${`${num(st.calls, 1)} (${num((st.calls * 12) / 52, 1)} בשבוע)`} />
         <${Row} k="לקוחות חדשים בחודש" v=${num(st.newClients, 1)} />
-        <${Row} k="שעות עבודה בחודש" v=${`${num(st.hours)} מתוך ${num(s.assumptions.hoursMonth)} (${num(weekOf(s.assumptions), 1)} בשבוע)`} />
+        <${Row} k="שעות עבודה בשבוע" v=${`${num((st.hours * 12) / 52, 1)} מתוך ${num(weekOf(s.assumptions), 1)} שיש לך`} />
       </tbody></table>
       <p class="mt-1 text-[13px] text-muted">החישוב מבוסס על: ${s.assumptions.leadToCall}% מהפניות קובעות שיחה, ${s.assumptions.closeRate}% מהשיחות קונות, לקוח חודשי נשאר ${s.assumptions.stayMonths} חודשים (ממוצעים בתחום, אפשר לשנות).</p>
 

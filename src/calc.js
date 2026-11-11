@@ -339,6 +339,12 @@ export function suggestMix(s) {
   return mix;
 }
 
+// One more sale of some product still fits in the hours the user has.
+export const hasRoom = (s, mix) => {
+  const avail = s.assumptions.hoursMonth ?? Infinity;
+  return paidProducts(s).filter((p) => p.hours != null).some((p) => steady(s, { ...mix, [p.id]: (mix[p.id] || 0) + 1 }).hours <= avail);
+};
+
 export const mixOf = (s) => (s.mix ? { ...suggestMix(s), ...s.mix } : suggestMix(s));
 export const isSharkMix = (s) => !s.mix;
 
@@ -369,8 +375,12 @@ export const SCEN_NAME = { real: 'הריאלי', low: 'הפסימי', high: 'ה�
 // Weak months by calendar month (the mockup's year). The system takes them from the Hebrew
 // calendar of each year: Tishrei falls in September in some years and October in others.
 export const WEAK = { 4: 'פסח', 8: 'החופש הגדול', 10: 'חגי תשרי' };
-export const paceOf = (s, key) => ({ ...PACE_DEFAULT[key], ...((s.pace && s.pace[key]) || {}) });
-export const paceEdited = (s, key) => !!(s.pace && s.pace[key] && Object.keys(PACE_DEFAULT[key]).some((f) => s.pace[key][f] !== PACE_DEFAULT[key][f]));
+// Amit, 11.11: a business with no paying clients yet (stage 1) starts slower: the first
+// client comes after a month of getting ready (two in the pessimistic scenario).
+export const PACE_SETUP = { real: { delay: 1 }, low: { delay: 2 }, high: { delay: 0 } };
+export const paceBase = (s, key) => ({ ...PACE_DEFAULT[key], ...(s.stage === 'setup' ? PACE_SETUP[key] : {}) });
+export const paceOf = (s, key) => ({ ...paceBase(s, key), ...((s.pace && s.pace[key]) || {}) });
+export const paceEdited = (s, key) => !!(s.pace && s.pace[key] && Object.keys(PACE_DEFAULT[key]).some((f) => s.pace[key][f] !== paceBase(s, key)[f]));
 export const growAt = (P, k) => (P.start / 100) * Math.pow(1 - P.slow / 100, k - 1);
 const monthNum = (m) => Number(addMonth(FIRST_MONTH, m - 1).split('-')[1]);
 const HORIZON = 60;
@@ -379,7 +389,9 @@ export function rampPlan(s, st, key = 'real') {
   const need = st.newClients;
   const today = s.stage === 'setup' ? null : todayAvg(s);
   const avail = s.assumptions.hoursMonth || 0;
-  const cap = avail > 0 && st.hours > 0 ? Math.max(1, avail / st.hours) : 1;
+  // Amit, 11.11: the plan is the mix of part 3. The forecast grows up to the full month and
+  // stops there; it never assumes more sales than the user chose (to grow, add to the mix).
+  const cap = 1;
   const fresh = !(today && today.clients > 0);
   const from = fresh ? 1 : today.clients;
   const start = need > 0 ? Math.min(1, from / need) : 1;
@@ -501,6 +513,9 @@ export function forecast(s, mix, key = 'real') {
 
 const TONE_SCORE = { ok: 2, warn: 1, bad: 0, info: 2 };
 
+// Hours are shown per week everywhere (Amit, 11.11); the math stays monthly: week = month × 12 ÷ 52.
+export const wkH = (h) => (h * 12) / 52;
+
 export function checks(s, mix, fc) {
   const st = fc.st;
   const goal = s.goal || 0;
@@ -533,14 +548,14 @@ export function checks(s, mix, fc) {
     id: 'time',
     q: 'כמה זמן נדרש?',
     tone: timeTone,
-    a: timeTone === 'bad' ? `צריך ${num(st.hours)} שעות, יש ${num(avail)}` : `${num(st.hours)} מתוך ${num(avail)} שעות בחודש`,
+    a: timeTone === 'bad' ? `צריך ${num(wkH(st.hours), 1)} שעות בשבוע, יש ${num(wkH(avail), 1)}` : `${num(wkH(st.hours), 1)} מתוך ${num(wkH(avail), 1)} שעות בשבוע`,
     sub: `כל שעת עבודה צריכה להכניס ${fmt(needPerHour)}. הסל שלך מכניס ${fmt(st.perHour)} לשעה`,
     needPerHour,
     how: [
-      ['שעות עבודה עם לקוחות (התמהיל)', `${num(st.work)} שעות`],
-      [`שיחות מכירה: ${num(st.calls, 1)} שיחות × ${num(callHours(s) * 60)} דקות`, `${num(st.callH, 1)} שעות`],
-      ['סה"כ צריך', `${num(st.hours)} שעות`, true],
-      ['יש לך בחודש', `${num(avail)} שעות`],
+      ['שעות עבודה עם לקוחות (התמהיל), בשבוע', `${num(wkH(st.work), 1)} שעות`],
+      [`שיחות מכירה: ${num(wkH(st.calls), 1)} שיחות בשבוע × ${num(callHours(s) * 60)} דקות`, `${num(wkH(st.callH), 1)} שעות`],
+      ['סה"כ צריך בשבוע', `${num(wkH(st.hours), 1)} שעות`, true],
+      ['יש לך בשבוע', `${num(wkH(avail), 1)} שעות`],
     ],
     rule: 'ירוק: עד 90% מהשעות שיש לך. כתום: בין 90% ל-100%, אין מקום לחודש עמוס. אדום: צריך יותר שעות ממה שיש.',
   });

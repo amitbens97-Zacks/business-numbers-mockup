@@ -10,7 +10,7 @@ import { Money, Stepper, Section } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
   fmt, num, monthName, monthYear, weekOf, monthOfWeek, FIX_EDIT, fixTitle, applyFix, overCeiling, netPrice,
-  paidProducts, isSharkMix, fixes, withPicks, clientsText, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
+  paidProducts, isSharkMix, hasRoom, fixes, withPicks, clientsText, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceBase, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
 // ---------- part 3: how much to sell ----------
@@ -92,6 +92,8 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
   const goal = s.goal || 0;
   const left = st.profit - st.setAside;
   const ok = goal > 0 && left >= goal;
+  // Amit, 11.11: when the hours are full, adding sales is not the answer: say so, and send to part 4.
+  const noRoom = goal > 0 && !ok && !hasRoom(s, mix);
   const out = st.cogs + st.fixed + st.setAside;
   const color = (i) => MIX_COLORS[i % MIX_COLORS.length];
   const income = (p) => (mix[p.id] || 0) * netPrice(s, p);
@@ -139,7 +141,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
       </div>
       <p class=${cx('mt-2 flex items-center gap-1.5 text-[15px] font-bold', ok ? 'text-money' : 'text-error')}>
         <${Icon} name=${ok ? 'circle-check' : 'circle-alert'} size=${18} />
-        ${!goal ? 'צריך יעד, למעלה' : ok ? (left - goal >= 50 ? `מגיעים ליעד, ועוד ${fmt(left - goal)}` : 'מגיעים ליעד') : `חסרים ${fmt(goal - left)} ליעד. אפשר להוסיף מכירות`}
+        ${!goal ? 'צריך יעד, למעלה' : ok ? (left - goal >= 50 ? `מגיעים ליעד, ועוד ${fmt(left - goal)}` : 'מגיעים ליעד') : noRoom ? `חסרים ${fmt(goal - left)} ליעד, והשעות שלך מלאות. בתחזית הכריש יציע מה לשנות: מחיר, תמהיל או שעות.` : `חסרים ${fmt(goal - left)} ליעד. אפשר להוסיף מכירות`}
       </p>
       <${How} class="mt-1"><${CalcLines}
         lines=${[
@@ -320,7 +322,7 @@ function Equation({ s, up, fc, notify }) {
     ['trending-up', `כל חודש יותר לקוחות מהחודש שלפניו. הקצב מתחיל ב-${P.start}% ויורד בכל חודש ב-${P.slow}% מעצמו: אחרי חצי שנה ${pct(growAt(P, 7))}, אחרי שנה ${pct(growAt(P, 13))}.`],
     ['calendar-x', `בחודשים חלשים המכירות יורדות ב-${P.dip}% וחוזרות בחודש שאחרי${weak ? `: ${weak}` : ''}.`],
     ['receipt', fc.st.fixedGrow > 0 ? `גם ההוצאות גדלות: פרסום וכלים עולים יחד עם העסק, ובחודש מלא הם גבוהים ב-${P.cost}% (עוד ${fmt(fc.st.fixedGrow)} בחודש).` : `גם ההוצאות גדלות: פרסום וכלים עולים יחד עם העסק, ב-${P.cost}% בחודש מלא. כרגע אין לך הוצאות כאלה.`],
-    ['clock', p.cap > 1.01 ? `התקרה: השעות שלך (${num(s.assumptions.hoursMonth)} בחודש). כשהן מלאות, המכירות נעצרות.` : 'התקרה: השעות שלך כבר כמעט מלאות בחודש מלא, אז מעליו כמעט אין לאן לגדול.'],
+    ['clock', 'התקרה: החודש המלא, התמהיל שבחרת בחלק 3. מעליו התחזית לא מניחה עוד מכירות. כדי לגדול, מגדילים את התמהיל.'],
   ];
   const fields = [
     ['delay', 'חודשים עד שהצמיחה מתחילה', 'חודשים', 6],
@@ -345,7 +347,7 @@ function Equation({ s, up, fc, notify }) {
       </div>
       ${edit && html`<div class="rise mt-3 grid gap-2 sm:grid-cols-2">
         ${fields.map(([f, label, unit, max]) => html`<label key=${f} class="flex flex-col gap-1 rounded-lg bg-white p-2.5 ring-1 ring-line">
-          <span class="flex items-baseline justify-between gap-2 text-[13px] font-bold">${label}<small class="font-semibold text-muted">במקור ${PACE_DEFAULT[key][f]}</small></span>
+          <span class="flex items-baseline justify-between gap-2 text-[13px] font-bold">${label}<small class="font-semibold text-muted">במקור ${paceBase(s, key)[f]}</small></span>
           <${Money} suffix=${unit} label=${label} value=${P[f]} onChange=${(v) => set(f, Math.min(max, v ?? 0))} />
         </label>`)}
         <p class="text-[12px] text-muted sm:col-span-2">כל שינוי עובר מיד לגרף, לבדיקות ולשורה התחתונה של התסריט הזה.${key === 'real' ? ' התסריט הריאלי הוא גם הבסיס של הסיכום ושל "כמה צריך למכור".' : ''}</p>

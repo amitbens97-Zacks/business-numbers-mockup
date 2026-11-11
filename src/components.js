@@ -168,10 +168,13 @@ export function BottomBar({ back, extra, status, primary }) {
       <div class="justify-self-center">${status}</div>
       <div class="justify-self-end">${primary}</div>
     </div>
-    <div class="flex flex-col gap-2 px-4 pt-3 md:hidden">
-      <div class="flex min-h-6 justify-center text-center">${status}</div>
-      <div class="[&>button]:w-full">${primary}</div>
-      <div class="flex items-center justify-center gap-4">${back}${extra}</div>
+    <div class="flex flex-col gap-1.5 px-4 pt-2 md:hidden">
+      <div class="flex min-h-5 justify-center text-center text-[13px]">${status}</div>
+      <div class="flex items-center gap-2">
+        ${back && html`<div class="shrink-0">${back}</div>`}
+        <div class="min-w-0 flex-1 [&>button]:w-full">${primary}</div>
+      </div>
+      ${extra && html`<div class="flex items-center justify-center gap-4">${extra}</div>`}
     </div>
   </div>`;
 }
@@ -361,7 +364,9 @@ export function PartnerBubble({ message, unread, onRead, action, mood = 'calm' }
 
   // Only the round shark shows. On hover (or keyboard focus) a dark tab with the name
   // slides out of it to the left, as in Amit's recording of 8.11.2026.
-  const place = pos ? { left: `${pos.l}px`, top: `${pos.t}px` } : { right: '20px', bottom: '20px' };
+  // On the phone the shark is smaller and starts at the left, where the lines end (Amit, 11.11).
+  const small = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+  const place = pos ? { left: `${pos.l}px`, top: `${pos.t}px` } : small ? { left: '12px', bottom: '12px' } : { right: '20px', bottom: '20px' };
   return html`<div
     ref=${el}
     class=${cx('fb-shark no-print', open && 'is-open', state === 'dragging' && 'is-dragging', state === 'blocked' && 'is-dragging is-blocked')}
@@ -374,8 +379,8 @@ export function PartnerBubble({ message, unread, onRead, action, mood = 'calm' }
     onPointerUp=${up}
     onKeyDown=${(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.stopPropagation(), toggle())}
   >
-    <span class="fb-shark-label" aria-hidden="true">${PARTNER.name}</span>
-    <span class="fb-shark-face"><${SharkAvatar} size=${68} mood=${mood} /></span>
+    ${!small && html`<span class="fb-shark-label" aria-hidden="true">${PARTNER.name}</span>`}
+    <span class="fb-shark-face"><${SharkAvatar} size=${small ? 48 : 68} mood=${mood} /></span>
     ${open &&
     html`<div
       class=${cx('absolute w-[min(340px,80vw)] cursor-auto', side.y === 'up' ? 'bottom-[calc(100%+16px)]' : 'top-[calc(100%+16px)]', side.x === 'right' ? 'right-0' : 'left-0')}
