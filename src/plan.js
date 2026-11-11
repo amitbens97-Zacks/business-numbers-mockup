@@ -36,11 +36,11 @@ function Needs({ s, up, st }) {
   const hoursWk = (st.hours * 12) / 52;
   const over = wk != null && hoursWk > wk;
   const tiles = [
-    ['users', 'פניות', st.leads, `${per(st.leads)} בשבוע`],
-    ['phone', 'שיחות מכירה', st.calls, `${per(st.calls)} בשבוע`],
-    ['handshake', 'לקוחות חדשים', st.newClients, `${per(st.newClients)} בשבוע`],
+    ['users', 'פניות בחודש', st.leads, `${per(st.leads)} בשבוע`],
+    ['phone', 'שיחות מכירה בחודש', st.calls, `${per(st.calls)} בשבוע`],
+    ['handshake', 'לקוחות חדשים בחודש', st.newClients, `${per(st.newClients)} בשבוע`],
   ];
-  return html`<${Section} title="מה זה אומר בכל חודש" sub="כדי למכור את התמהיל, אלה המספרים שצריך להשיג.">
+  return html`<${Section} title="מה זה אומר בפועל" sub="כדי למכור את התמהיל: פניות, שיחות ולקוחות בכל חודש, ושעות עבודה בכל שבוע.">
     <div class="grid grid-cols-3 gap-2 sm:gap-3">
       ${tiles.map(([icon, label, n, sub]) => html`<div key=${label} class="flex flex-col items-center gap-0.5 rounded-xl bg-brand-50 px-2 py-3 text-center">
         <span class="text-brand-600"><${Icon} name=${icon} size=${20} /></span>
@@ -50,11 +50,11 @@ function Needs({ s, up, st }) {
       </div>`)}
     </div>
     <div class=${cx('mt-3 rounded-xl p-3', over ? 'bg-error-50' : 'bg-canvas')}>
+      <p class="mb-1.5 flex items-center gap-1.5 text-[15px] font-bold"><${Icon} name="clock" size=${18} class=${over ? 'text-error' : 'text-brand-600'} />שעות עבודה בשבוע</p>
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[15px]">
-        <${Icon} name="clock" size=${18} class=${over ? 'text-error' : 'text-brand-600'} />
-        <span>עבודה ושיחות: <b class="tabular-nums">${num(hoursWk, 1)}</b> שעות בשבוע, מתוך</span>
+        <span>עם לקוחות ובשיחות: <b class="tabular-nums">${num(hoursWk, 1)}</b> שעות בשבוע, מתוך</span>
         <span class="w-[110px]"><${Money} suffix="שעות" label="שעות בשבוע שיש לך" invalid=${wk == null} value=${wk} onChange=${(v) => up((d) => { d.assumptions.hoursWeek = v; d.assumptions.hoursMonth = monthOfWeek(v); d.assumptions.hoursEdited = true; })} /></span>
-        <span>שיש לך</span>
+        <span>בשבוע שיש לך</span>
       </div>
       ${wk != null && html`<div class="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e3ddd0]"><div class=${cx('h-full rounded-full transition-all', over ? 'bg-error' : 'bg-brand-600')} style=${{ width: `${Math.min(100, (hoursWk / (wk || 1)) * 100)}%` }}></div></div>`}
       ${over && html`<p class="mt-1.5 text-[14px] font-bold text-error">זה יותר שעות ממה שיש לך. בתחזית נראה מה אפשר לשנות.</p>`}
@@ -154,8 +154,8 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
       /><//>
     <//>
 
-    <${Needs} s=${s} up=${up} st=${st} />
     <${TaxNote} s=${s} notify=${notify} />
+    <${Needs} s=${s} up=${up} st=${st} />
     <${Assumptions} s=${s} up=${up} />
   </div>`;
 }

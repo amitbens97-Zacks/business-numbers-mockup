@@ -36,35 +36,43 @@ function FbSwitch({ sw, onSwitch }) {
   </div>`;
 }
 
-// The shark's suggestions: every one that fits shows, and "עוד הצעות" brings 4 more on each
-// click (in production the model writes new ones every time: no limit). A suggestion with a
-// FlowBiz way to get it has a small "לחסוך עם FlowBiz" button that opens it, with the
-// market price beside it, in the same plain look.
+// The shark's suggestions: up to 8 at a time (Amit, 11.11). "עוד הצעות" brings 4 more, up to
+// 8; each one can be removed ("לא רלוונטי"), and the next suggestion takes its place (in
+// production the model writes new ones every time: no limit). A removed one does not come back.
 const BATCH = 4;
-function SharkCard({ x, label, onAdd }) {
-  return html`<button type="button" class="flex min-h-[56px] items-start gap-2 rounded-xl border-[1.5px] border-brand-300 bg-white px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
-    <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
-    <span class="min-w-0 flex-1">
-      <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
-      <small class="block text-[12px] leading-snug text-muted"><span class=${cx('font-bold', x.need === 1 ? 'text-ink' : '')}>${NEED_LABEL[x.need || 3]}</span>${x.note ? ` · ${x.note}` : ''}</small>
-    </span>
-  </button>`;
+const MAX_SHOWN = 8;
+function SharkCard({ x, label, onAdd, onDismiss }) {
+  return html`<div class="flex min-h-[56px] items-stretch rounded-xl border-[1.5px] border-brand-300 bg-white">
+    <button type="button" class="flex min-w-0 flex-1 items-start gap-2 rounded-s-xl px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
+      <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
+      <span class="min-w-0 flex-1">
+        <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
+        <small class="block text-[12px] leading-snug text-muted"><span class=${cx('font-bold', x.need === 1 ? 'text-ink' : '')}>${NEED_LABEL[x.need || 3]}</span>${x.note ? ` · ${x.note}` : ''}</small>
+      </span>
+    </button>
+    <button type="button" class="grid w-9 shrink-0 place-items-center rounded-e-xl border-s border-line text-muted hover:bg-error-50 hover:text-error cursor-pointer" aria-label=${`לא רלוונטי: ${x.name}`} title="לא רלוונטי" onClick=${() => onDismiss(x)}><${Icon} name="x" size=${15} /></button>
+  </div>`;
 }
-function SharkChips({ title, items, onAdd, label }) {
-  const [more, setMore] = useState(0);
+function SharkChips({ title, items, onAdd, onDismiss, label }) {
   const base = items.filter((x) => !x.extra);
   const extra = items.filter((x) => x.extra);
-  const list = [...base, ...extra.slice(0, more)];
-  const left = extra.length - Math.min(more, extra.length);
+  const pool = [...base, ...extra];
+  const [want, setWant] = useState(Math.min(MAX_SHOWN, base.length));
+  const list = pool.slice(0, want);
+  const full = list.length >= MAX_SHOWN;
+  const left = pool.length - list.length;
   if (!items.length) return null;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
     <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
     <p class="mb-2 text-[12px] text-muted">מסודר מהדחוף למה שיכול לחכות. מחירי שוק כולל מע"מ, נובמבר 2026, אלא אם כתוב "+ מע"מ". אחרי שמוסיפים אפשר לשנות כל סכום.</p>
-    ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} />`)}</div>`}
-    <button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setMore(more + BATCH)}>
-      <${Icon} name="plus" size=${15} />עוד הצעות
-    </button>
-    ${left <= 0 && more > 0 && html`<p class="text-[13px] text-muted">הכריש עבר על כל מה שמתאים לעסק כמו שלך. אם חסר משהו, אפשר להוסיף שורה משלך.</p>`}
+    ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} onDismiss=${onDismiss} />`)}</div>`}
+    ${full
+      ? html`<p class="mt-2 text-[13px] text-muted">עד 8 הצעות בכל פעם. הצעה שלא רלוונטית אפשר למחוק (✕), וחדשה תבוא במקומה.</p>`
+      : left > 0
+        ? html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setWant(Math.min(MAX_SHOWN, list.length + BATCH))}>
+            <${Icon} name="plus" size=${15} />עוד הצעות
+          </button>`
+        : html`<p class="mt-2 text-[13px] text-muted">הכריש עבר על כל מה שמתאים לעסק כמו שלך. אם חסר משהו, אפשר להוסיף שורה משלך.</p>`}
   </div>`;
 }
 
@@ -97,7 +105,7 @@ function SetupRow({ x, set, remove, sw }) {
         role="checkbox"
         aria-checked=${!!x.done}
         aria-label=${`${x.name || 'הפריט'}: שולם במלואו`}
-        onClick=${() => set(x.done ? { done: false } : { done: true, spent: Math.max(x.spent || 0, x.planned || 0) })}
+        onClick=${() => set(x.done ? { done: false, spent: x.spentBefore ?? 0, spentBefore: undefined } : { done: true, spentBefore: x.spent || 0, spent: Math.max(x.spent || 0, x.planned || 0) })}
         class="inline-flex h-10 items-center gap-2 rounded-lg px-1.5 text-[14px] font-bold text-ink hover:bg-brand-50 cursor-pointer"
       >
         <span class=${cx('grid h-6 w-6 place-items-center rounded-md border-2 bg-white', x.done ? 'border-ink' : 'border-line')}>${x.done && html`<${PencilCheck} size=${16} color="#0038b8" weight=${3} />`}</span>
@@ -130,13 +138,11 @@ function BudgetSlider({ s, b, setBudget }) {
   const status =
     s.setupBudget == null && draft == null
       ? `כמה כסף ${g('אתה שם', 'את שמה')} בצד להקמת העסק? אפשר לגרור, או ללחוץ על המספר ולכתוב.`
-      : !s.budgetSet && draft == null && s.bank.amount != null && s.setupBudget === s.bank.amount
-        ? `התחלנו מכל הכסף שיש לעסק היום (${fmt(s.bank.amount)}). אפשר להוריד: מה שלא בתקציב נשאר פנוי לחודשים הבאים.`
-        : b.allocated > v
+      : b.allocated > v
         ? html`<span class="text-error">הפריטים עוברים את התקציב ב-${fmt(b.allocated - v)}.</span>`
-        : free > 0
-          ? `חולקו לפריטים ${fmt(b.allocated)}. עוד ${fmt(free)} לא חולקו, ונספרים ב"נשאר לשלם".`
-          : 'כל התקציב חולק לפריטים.';
+        : b.allocated > 0 && free <= 0
+          ? 'כל התקציב חולק לפריטים.'
+          : '';
   return html`<div class="rounded-[14px] bg-canvas px-4 pb-3 pt-3.5">
     <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
       <div>
@@ -227,7 +233,8 @@ function SetupTable({ s, up }) {
     <${SetupMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
-      items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !(mustReady(s, s.stage === 'setup' ? 'setup' : 'setupDone') && mustSetupFor(s).some((y) => y.name === x.name)))}
+      items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !isDismissed(s, x) && !(mustReady(s, 'setup') && mustSetupFor(s).some((y) => y.name === x.name)))}
+      onDismiss=${(x) => dismiss(up, x)}
       label=${(x) => x.shown || fmt(x.planned)}
       onAdd=${(x) => add(x.flowbiz ? { name: x.name, icon: x.icon, flowbiz: true, value: x.value, planned: null, spent: 0 } : { name: x.name, icon: x.icon, planned: x.planned })}
     />
@@ -270,37 +277,45 @@ function expFit(s, x) {
   return { ok: false, before, after, drop: best && best.rw.months - after.months >= 0.25 ? best : null };
 }
 
-// Shown only once the user has finished filling the section (pressed "המשך" once): the
-// first press with a must-have missing keeps the section open and brings up this box.
-const mustReady = (s, id) => (s.seen || []).includes(id);
+// A suggestion the user removed ("לא רלוונטי" / "לא כרגע") does not come back.
+const isDismissed = (s, x) => (s.dismissed || []).includes(x.name);
+const dismiss = (up, x) => up((d) => (d.dismissed = [...(d.dismissed || []), x.name]), `${x.name} ירד מההצעות`);
+// Amit, 11.11: the must-haves are a recommendation only. They never stop "המשך". The box
+// shows once the user started the table (a row of their own) or went through the section,
+// and each one has "לא כרגע", which removes it.
+const mustReady = (s, which) =>
+  which === 'expenses'
+    ? (s.seen || []).includes('expenses') || s.expenses.some((x) => !x.flowbiz)
+    : (s.seen || []).includes(s.stage === 'setup' ? 'setup' : 'setupDone') || s.setup.some((x) => !x.flowbiz);
 function MustHave({ id, items, children }) {
   if (!items.length) return null;
-  return html`<div id=${id} class="rise mt-4 scroll-mt-24 rounded-xl border-[1.5px] border-warn/40 bg-warn-50 p-3">
-    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-alert-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש: לפני שממשיכים, חסר משהו שהעסק חייב</p>
+  return html`<div id=${id} class="rise mt-4 scroll-mt-24 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
+    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש ממליץ: כמעט כל עסק צריך גם את זה</p>
     <ul class="flex flex-col gap-2">${children}</ul>
-    <p class="mt-2 text-[12px] text-muted">אפשר גם להמשיך בלי זה, ולחזור לכאן אחר כך.</p>
   </div>`;
 }
 const mustBtn = 'inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-bold cursor-pointer';
-function MustRow({ x, amount, why, actions }) {
+function MustRow({ x, amount, why, actions, onLater }) {
   return html`<li class="rounded-lg bg-white p-2.5 ring-1 ring-line">
     <p class="flex items-baseline justify-between gap-2"><b class="text-[15px]">${x.name}</b><b class="shrink-0 tabular-nums">${amount}</b></p>
     <p class="text-[13px] text-muted">${x.note}</p>
     <p class="mt-1 text-[13px]">${why}</p>
     <div class="mt-2 flex flex-wrap gap-2">
       ${actions.map(([label, icon, onClick, main], i) => html`<button key=${i} type="button" class=${cx(mustBtn, main ? 'bg-brand-600 text-white hover:bg-brand-700' : 'border-[1.5px] border-brand-300 bg-white text-brand-600 hover:bg-brand-50')} onClick=${onClick}><${Icon} name=${icon} size=${14} />${label}</button>`)}
+      <button type="button" class=${cx(mustBtn, 'text-muted hover:bg-white')} onClick=${onLater}>לא כרגע</button>
     </div>
   </li>`;
 }
 
 function SetupMust({ s, up }) {
-  const list = mustReady(s, s.stage === 'setup' ? 'setup' : 'setupDone') ? mustSetupFor(s) : [];
+  const list = mustReady(s, 'setup') ? mustSetupFor(s).filter((x) => !isDismissed(s, x)) : [];
+  const later = (x) => dismiss(up, x);
   const addIt = (d, x) => d.setup.push({ id: nextId('s'), name: x.name, icon: x.icon, planned: x.planned, spent: 0, done: false });
   return html`<${MustHave} id="must-setup" items=${list}>
     ${list.map((x) => {
       const fit = setupFit(s, x);
       if (fit.ok)
-        return html`<${MustRow} key=${x.name} x=${x} amount=${fmt(x.planned)}
+        return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${fmt(x.planned)}
           why=${fit.free !== Infinity ? `נכנס בתקציב: אחרי זה נשארים ${fmt(fit.free)} פנויים.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
           actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
       const acts = [];
@@ -311,7 +326,7 @@ function SetupMust({ s, up }) {
           if (fit.raise > 0) { d.setupBudget = (d.setupBudget || 0) + fit.raise; d.budgetSet = true; }
         }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
       acts.push([`להוסיף ולהגדיל את התקציב ב-${fmt(fit.over)}`, 'plus', () => up((d) => { addIt(d, x); d.setupBudget = (d.setupBudget || 0) + fit.over; d.budgetSet = true; }, `${x.name} נוסף, התקציב גדל`), !fit.drop]);
-      return html`<${MustRow} key=${x.name} x=${x} amount=${fmt(x.planned)}
+      return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${fmt(x.planned)}
         why=${html`חסרים לזה <b>${fmt(fit.over)}</b> בתקציב.${fit.drop ? html` <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)}) פחות דחוף ויכול לחכות.` : ' אין פריט שאפשר לוותר עליו בינתיים.'}`}
         actions=${acts} />`;
     })}
@@ -319,21 +334,22 @@ function SetupMust({ s, up }) {
 }
 
 function ExpensesMust({ s, up }) {
-  const list = mustReady(s, 'expenses') ? mustExpensesFor(s) : [];
+  const list = mustReady(s, 'expenses') ? mustExpensesFor(s).filter((x) => !isDismissed(s, x)) : [];
+  const later = (x) => dismiss(up, x);
   const addIt = (d, x) => d.expenses.push({ id: nextId('x'), start: 'now', ...plainOf(x) });
   return html`<${MustHave} id="must-expenses" items=${list}>
     ${list.map((x) => {
       const fit = expFit(s, x);
       const amount = `${fmt(x.amount)} ${per(x.freq)}`;
       if (fit.ok)
-        return html`<${MustRow} key=${x.name} x=${x} amount=${amount}
+        return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${amount}
           why=${fit.after && fixedMonthly(s) > 0 ? `גם עם זה, בלי הכנסה הכסף מחזיק ${spanOf(fit.after)}.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
           actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
       const acts = [];
       if (fit.drop)
         acts.push([`להוסיף, ולוותר על ${fit.drop.y.name}`, 'arrow-left-right', () => up((d) => { d.expenses = d.expenses.filter((y) => y.id !== fit.drop.y.id); addIt(d, x); }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
       acts.push(['רק להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), !fit.drop]);
-      return html`<${MustRow} key=${x.name} x=${x} amount=${amount}
+      return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${amount}
         why=${html`בלי הכנסה הכסף מחזיק היום ${spanOf(fit.before)}, ועם זה רק <b>${spanOf(fit.after)}</b>.${fit.drop ? html` במקום זה אפשר לוותר בינתיים על <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)} בחודש), ואז ${spanOf(fit.drop.rw)}.` : ' אין הוצאה שיכולה לחכות ושמשנה את התמונה, אז זה נשאר בחוסר. כדאי לבדוק איך מכניסים עוד כסף לעסק.'}`}
         actions=${acts} />`;
     })}
@@ -409,7 +425,8 @@ function ExpensesTable({ s, up }) {
     <${ExpensesMust} s=${s} up=${up} />
     <${SharkChips}
       title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
-      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !(mustReady(s, 'expenses') && mustExpensesFor(s).some((y) => y.name === x.name)) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
+      onDismiss=${(x) => dismiss(up, x)}
+      items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !isDismissed(s, x) && !(mustReady(s, 'expenses') && mustExpensesFor(s).some((y) => y.name === x.name)) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
       label=${(x) => x.shown || `${fmt(x.amount)} ${per(x.freq)}`}
       onAdd=${addSuggestion}
     />
@@ -686,14 +703,17 @@ function GuideSection({ sec, i, open, seen, onToggle, onNext, nextTitle, childre
 // The live summary on the side: what the numbers so far say.
 // When the money lasts less than 3 months: what the shark would drop first. Only what can
 // wait ("אפשר לחכות"): a setup item not paid yet, or a fixed expense. The one that adds the most time.
-function cutTip(s, rw) {
+// wide: the user's own pick ("לוותר על משהו אחר"): also what is "חשוב", never a must-have,
+// marketing, tax or law.
+function cutTip(s, rw, wide) {
   if (!rw || rw.months >= 3 || fixedMonthly(s) <= 0) return null;
   const setupOn = s.stage === 'setup' || s.setupDone === false;
+  const ok = (x) => (wide ? needOf(x.name) >= 2 : needOf(x.name) === 3);
   const opts = [
-    ...(setupOn ? s.setup.filter((x) => !x.flowbiz && !x.done && itemLeft(x) > 0 && needOf(x.name) === 3).map((x) => ({ kind: 'setup', x, save: itemLeft(x), next: { ...s, setup: s.setup.filter((y) => y.id !== x.id), setupBudget: s.setupBudget == null ? null : Math.max(0, s.setupBudget - itemLeft(x)) } })) : []),
-    ...s.expenses.filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && needOf(x.name) === 3).map((x) => ({ kind: 'exp', x, save: monthlyCost(x), next: { ...s, expenses: s.expenses.filter((y) => y.id !== x.id) } })),
+    ...(setupOn ? s.setup.filter((x) => !x.flowbiz && !x.done && itemLeft(x) > 0 && ok(x)).map((x) => ({ kind: 'setup', x, save: itemLeft(x), next: { ...s, setup: s.setup.filter((y) => y.id !== x.id), setupBudget: s.setupBudget == null ? null : Math.max(0, s.setupBudget - itemLeft(x)) } })) : []),
+    ...s.expenses.filter((x) => !x.flowbiz && x.category !== 'marketing' && x.category !== 'gov' && ok(x)).map((x) => ({ kind: 'exp', x, save: monthlyCost(x), next: { ...s, expenses: s.expenses.filter((y) => y.id !== x.id) } })),
   ].map((o) => ({ ...o, rw: runway(o.next) }));
-  return opts.sort((a, b) => b.rw.months - a.rw.months)[0] || null;
+  return opts.sort((a, b) => b.rw.months - a.rw.months);
 }
 const spanOf = (rw) => {
   if (rw.months === Infinity) return 'יותר משנתיים';
@@ -723,7 +743,11 @@ function Summary({ s, up }) {
   const setupLeft = s.stage === 'setup' || s.setupDone === false ? b.remaining : 0;
   // Only once the fixed expenses are in: before that there is nothing to divide by.
   const showRw = rw && (fixedMonthly(s) > 0 || (s.seen || []).includes('expenses'));
-  const tip = showRw && cutTip(s, rw);
+  // "לוותר על משהו אחר" opens the other things that could be dropped, each with how long
+  // the money lasts without it; the user picks one.
+  const [other, setOther] = useState(false);
+  const tip = ((showRw && cutTip(s, rw)) || [])[0] || null;
+  const others = tip ? (cutTip(s, rw, true) || []).filter((o) => o.x.id !== tip.x.id).slice(0, 5) : [];
   const drop = (o) =>
     up((d) => {
       if (o.kind === 'setup') {
@@ -763,6 +787,13 @@ function Summary({ s, up }) {
     html`<div class="mt-3 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3 text-[14px]">
       <p class="flex items-start gap-2"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 shrink-0 rounded-full bg-white" /><span><b>הכריש:</b> ${tip.x.name} ${tip.kind === 'setup' ? `(${fmt(tip.save)})` : `(${fmt(tip.save)} בחודש)`} יכול לחכות. בלי זה הכסף מחזיק ${spanOf(tip.rw)}.</span></p>
       <button type="button" class="mt-1.5 inline-flex h-8 items-center gap-1 rounded-lg border-[1.5px] border-brand-300 bg-white px-2.5 text-[13px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer" onClick=${() => drop(tip)}><${Icon} name="scissors" size=${13} />לוותר בינתיים</button>
+      ${others.length > 0 && html`<button type="button" aria-expanded=${other} class="ms-2 mt-1.5 inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-[13px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setOther(!other)}><${Icon} name=${other ? 'chevron-up' : 'list'} size=${13} />לוותר על משהו אחר</button>`}
+      ${other && others.length > 0 && html`<ul class="rise mt-2 flex flex-col gap-1.5">
+        ${others.map((o) => html`<li key=${o.x.id}><button type="button" class="flex w-full items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-start ring-1 ring-line hover:ring-brand-300 cursor-pointer" onClick=${() => (setOther(false), drop(o))}>
+          <span class="min-w-0"><b class="block text-[13px]">${o.x.name}</b><small class="text-[12px] text-muted">${o.kind === 'setup' ? fmt(o.save) : `${fmt(o.save)} בחודש`} · בלי זה מחזיק ${spanOf(o.rw)}</small></span>
+          <span class="shrink-0 text-[12px] font-bold text-brand-600">לוותר</span>
+        </button></li>`)}
+      </ul>`}
     </div>`}
   </div>`;
 }
@@ -781,17 +812,10 @@ export function TodayScreen({ s, up, onStage }) {
     if (open) setTimeout(() => document.getElementById(`sec-${open}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   }, [open]);
   const next = (sec, i) => {
-    // The first "המשך" with a must-have missing: stay here and show the shark's box.
-    const must = sec.id === 'setup' || (sec.id === 'setupDone' && s.setupDone === false) ? mustSetupFor(s) : sec.id === 'expenses' ? mustExpensesFor(s) : [];
-    const stay = must.length > 0 && !seen.has(sec.id);
     up((d) => {
       if (!d.seen.includes(sec.id)) d.seen.push(sec.id);
       sec.onNext?.(d);
     });
-    if (stay) {
-      setTimeout(() => document.getElementById(sec.id === 'expenses' ? 'must-expenses' : 'must-setup')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
-      return;
-    }
     const after = secs.slice(i + 1).find((x) => !seen.has(x.id)) || secs[i + 1];
     setOpen(after ? after.id : null);
     if (!after) setTimeout(() => document.getElementById('today-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
