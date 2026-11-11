@@ -23,7 +23,7 @@ function TaxNote({ s, notify }) {
   return html`<div class="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-brand-300 bg-white px-4 py-3">
     <span class="fb-chip-ic h-10 w-10 shrink-0"><${Icon} name="landmark" size=${19} /></span>
     <p class="min-w-[200px] flex-1 text-[15px]"><b>החישובים כאן לא כוללים מס.</b> <span class="text-muted">${overCeiling(s) ? 'ובהכנסה שהיעד דורש, גם עוברים את תקרת עוסק פטור. ' : ''}את המס מחשבים עם רואה החשבון שלנו, בפרק ראיית חשבון.</span></p>
-    <${Button} variant="mini" onClick=${() => notify('במערכת: עוברים לפרק ראיית חשבון, למחשבון המס ולשיחה עם רואה החשבון', 'landmark')}>לחישוב המס עם רואה החשבון<${Icon} name="arrow-left" size=${15} /><//>
+    <${Button} variant="mini" onClick=${() => notify('במערכת: עוברים לעמוד ראיית חשבון. עושים מנוי, עוברים את השלבים, ובסוף שולחים את הפרטים לרואה החשבון, והוא יוצר קשר.', 'landmark')}>לחישוב המס עם רואה החשבון<${Icon} name="arrow-left" size=${15} /><//>
   </div>`;
 }
 
