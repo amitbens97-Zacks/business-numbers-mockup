@@ -1,6 +1,6 @@
 // The annual forecast as a precise chart (never a pencil sketch): real amounts on the
 // axis, one bar per month.
-//   bars          - what is left each month (net profit, after expenses and tax)
+//   bars          - what is left each month (after expenses, before tax)
 //   dashed line   - the monthly goal
 //   lower panel   - the money in the business at the end of each month (stage 3: with
 //                   the safety cushion as an amber line)
@@ -166,7 +166,6 @@ export function ForecastChart({ fc, goal, showCash = true }) {
       <p class="font-display text-[18px] font-extrabold">נשאר ${fmt(hr.profit)}</p>
       <p class="flex justify-between gap-2 text-[12px]"><span>הכנסות</span><span class="tabular-nums">${fmt(hr.income)}</span></p>
       <p class="flex justify-between gap-2 text-[12px]"><span>עלויות והוצאות</span><span class="tabular-nums">${fmt(-(hr.cogs + hr.fixed))}</span></p>
-      <p class="flex justify-between gap-2 text-[12px]"><span>מס וביטוח לאומי</span><span class="tabular-nums">${fmt(-hr.tax)}</span></p>
       ${hr.vat > 1 && html`<p class="flex justify-between gap-2 text-[12px] text-brand-300"><span>מע"מ שעובר למדינה</span><span class="tabular-nums">${fmt(hr.vat)}</span></p>`}
       ${showCash && html`<p class="mt-1 flex justify-between gap-2 border-t border-white/20 pt-1 text-[12px]"><span>בעסק בסוף החודש</span><span class="tabular-nums">${fmt(hr.cash)}</span></p>`}
     </div>`}
@@ -194,7 +193,6 @@ export function ForecastTable({ fc, goal }) {
           <th class="pb-1.5 text-start">הכנסות</th>
           ${lic && html`<th class="pb-1.5 text-start">מע"מ</th>`}
           <th class="pb-1.5 text-start">עלויות והוצאות</th>
-          <th class="pb-1.5 text-start">מס</th>
           <th class="pb-1.5 text-start">נשאר</th>
           <th class="pb-1.5 text-start">בעסק</th>
         </tr>
@@ -206,7 +204,6 @@ export function ForecastTable({ fc, goal }) {
             <td class="py-1.5">${fmt(r.income)}</td>
             ${lic && html`<td class="py-1.5 text-muted">${fmt(r.vat)}</td>`}
             <td class="py-1.5">${fmt(r.cogs + r.fixed)}</td>
-            <td class="py-1.5">${fmt(r.tax)}</td>
             <td class=${'py-1.5 font-display font-extrabold ' + (r.profit >= goal ? 'text-brand-600' : '')}>${fmt(r.profit)}</td>
             <td class=${'py-1.5 ' + (r.cash < 0 ? 'font-bold text-error' : '')}>${fmt(r.cash)}</td>
           </tr>`,
@@ -216,7 +213,6 @@ export function ForecastTable({ fc, goal }) {
           <td class="py-2">${fmt(fc.yearIncome)}</td>
           ${lic && html`<td class="py-2 text-muted">${fmt(fc.yearGross - fc.yearIncome)}</td>`}
           <td class="py-2">${fmt(fc.rows.reduce((x, r) => x + r.cogs + r.fixed, 0))}</td>
-          <td class="py-2">${fmt(fc.rows.reduce((x, r) => x + r.tax, 0))}</td>
           <td class="py-2 font-display font-extrabold">${fmt(fc.yearProfit)}</td>
           <td class="py-2"></td>
         </tr>

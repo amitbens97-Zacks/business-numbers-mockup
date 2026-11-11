@@ -10,8 +10,10 @@
 export const PARTNER = { name: 'הכריש', role: 'השותף העסקי' };
 
 export const STEP = { n: 5, name: 'העסק במספרים', chapterNo: 2, chapter: 'שביל הכסף', icon: 'calculator' };
-export const PARTS = ['המצב היום', 'המחירים', 'היעד', 'כמה למכור', 'התחזית'];
-export const STEP_SCREENS = ['today', 'prices', 'goal', 'sell', 'forecast'];
+// Four parts (Amit, 11.11): the goal part is gone. The goal is a field in part 3, and the
+// numbers are before tax: the accountant chapter does the tax with the user.
+export const PARTS = ['המצב היום', 'המוצרים', 'כמה למכור', 'התחזית'];
+export const STEP_SCREENS = ['today', 'prices', 'sell', 'forecast'];
 
 export const TODAY = '2026-11-09';
 // The forecast runs 12 months from next month.

@@ -10,7 +10,7 @@ import {
   paidProducts, netPrice, perHour, isLicensed, taxPctOf, overCeiling, weekOf, asLicensed, neededYear,
 } from './calc.js';
 import { ForecastChart, ForecastLegend } from './chart.js';
-import { Checks, Verdict, Quarters } from './plan.js';
+import { Checks, Verdict } from './plan.js';
 
 const H = ({ n, children }) => html`<h2 class="mb-2 mt-7 flex items-center gap-2 font-display text-[20px] font-black"><span class="grid h-7 w-7 place-items-center rounded-full bg-ink text-[13px] text-white">${n}</span>${children}</h2>`;
 const Row = ({ k, v, strong }) => html`<tr class="border-t border-line"><td class="py-1.5 pe-3">${k}</td><td class=${cx('py-1.5 text-end tabular-nums', strong && 'font-display font-black')}>${v}</td></tr>`;
@@ -51,25 +51,20 @@ export function DocScreen({ s, m }) {
         ${rw && html`<${Row} k=${s.stage === 'setup' ? 'בלי הכנסה, הכסף מחזיק' : 'בלי מכירות חדשות, הכסף מחזיק'} v=${rw.until ? `עד ${monthYear(rw.until)}` : 'יותר משנתיים'} />`}
       </tbody></table>
 
-      <${H} n="2">המחירים<//>
+      <${H} n="2">המוצרים<//>
       <table class="w-full text-[14px]">
         <thead><tr class="text-[12px] font-bold text-muted"><th class="pb-1 text-start">מוצר</th><th class="pb-1 text-start">מחיר</th><th class="pb-1 text-start">מתי הכסף נכנס</th><th class="pb-1 text-end">לשעת עבודה</th></tr></thead>
         <tbody>${ps.map((p) => html`<tr key=${p.id} class="border-t border-line"><td class="py-1.5 pe-2 font-bold">${p.name}</td><td class="py-1.5 tabular-nums">${fmt(p.price)}${p.kind === 'monthly' ? ' לחודש' : ''}</td><td class="py-1.5 pe-2">${cashText(p, s.assumptions.stayMonths || 3)}</td><td class="py-1.5 text-end tabular-nums">${fmt(perHour(s, p))}</td></tr>`)}</tbody>
       </table>
       ${isLicensed(s) && html`<p class="mt-1 text-[13px] text-muted">המחירים כוללים מע"מ ${SETTINGS.vatPct}%. החישובים לוקחים רק את מה שנשאר לעסק.</p>`}
 
-      <${H} n="3">היעדים<//>
-      <table class="w-full text-[15px]"><tbody>
-        <${Row} k="נשאר לך בכל חודש" v=${fmt(s.goal)} strong />
-        <${Row} k="בשנה" v=${fmt(fc.annualGoal)} />
-        ${overCeiling(s) && html`<${Row} k="תקרת עוסק פטור" v=${`כדי להגיע ליעד צריך להכניס לפחות ${fmt(neededYear(s))} בשנה, מעל התקרה. כעוסק מורשה יישארו ${fmt(asLicensed(s).left)} בחודש`} />`}
-        <${Row} k="מס וביטוח לאומי" v=${`${taxPctOf(s)}% מהרווח (${ent})`} />
+      <${H} n="3">כמה צריך למכור<//>
+      <table class="mb-2 w-full text-[15px]"><tbody>
+        <${Row} k="היעד: נשאר לך בכל חודש (לפני מס)" v=${fmt(s.goal)} strong />
         ${s.stage === 'active' && html`<${Row} k="כרית ביטחון" v=${`${fmt(cushionTarget(s))}${setAsideMonthly(s) ? ` · ${fmt(setAsideMonthly(s))} בחודש` : ' · מלאה'}`} />`}
+        ${overCeiling(s) && html`<${Row} k="תקרת עוסק פטור" v="בהכנסה של חודש מלא עוברים אותה. כדאי לתכנן את המעבר עם רואה החשבון" />`}
       </tbody></table>
-      ${s.stage === 'active' && html`<div class="mt-3"><${Quarters} fc=${fc} /></div>`}
-
-      <${H} n="4">כמה צריך למכור<//>
-      <p class="mb-2 text-[15px]">העסק צריך להכניס <b>${fmt(st.needed)}</b> בחודש מלא. התמהיל:</p>
+      <p class="mb-2 text-[15px]">בחודש מלא העסק מכניס <b>${fmt(st.income)}</b>, ונשארים לך <b>${fmt(st.profit - st.setAside)}</b>. התמהיל:</p>
       <ul class="mb-2 flex flex-wrap gap-2">${ps.filter((p) => m.mix[p.id]).map((p) => html`<li key=${p.id}><${Tag} tone="blue">${m.mix[p.id]} × ${p.short}${p.kind === 'monthly' ? ' (פעילים)' : ''}<//></li>`)}</ul>
       <table class="w-full text-[15px]"><tbody>
         <${Row} k="פניות שצריכות להגיע אליך בחודש" v=${`${num(st.leads)} (${num((st.leads * 12) / 52, 1)} בשבוע)`} />
@@ -79,7 +74,7 @@ export function DocScreen({ s, m }) {
       </tbody></table>
       <p class="mt-1 text-[13px] text-muted">החישוב מבוסס על: ${s.assumptions.leadToCall}% מהפניות קובעות שיחה, ${s.assumptions.closeRate}% מהשיחות קונות, לקוח חודשי נשאר ${s.assumptions.stayMonths} חודשים (ממוצעים בתחום, אפשר לשנות).</p>
 
-      <${H} n="5">התחזית לשנה<//>
+      <${H} n="4">התחזית לשנה<//>
       <${ForecastChart} fc=${fc} goal=${s.goal} />
       <div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>
       <p class="mt-3 text-[15px]">יישאר לך בשנה <b>${fmt(fc.yearProfit)}</b> מול יעד של ${fmt(fc.annualGoal)}. מגיעים ליעד ההכנסה החודשית, כל התמהיל (${fmt(st.income)} בחודש), ${fc.ramp != null && fc.ramp <= 12 ? `תוך ${fc.ramp} חודשים` : 'רק אחרי יותר משנה'}, לפי התסריט הריאלי.${fc.yearProfit < fc.annualGoal && fc.goalIdx >= 0 ? ` השנה הראשונה כוללת את הדרך לחודש מלא; מ${monthYear(fc.rows[fc.goalIdx].key)} היעד נשאר לך בכל חודש.` : ''}</p>
@@ -87,7 +82,7 @@ export function DocScreen({ s, m }) {
       ${s.applied.length > 0 &&
       html`<p class="mt-3 text-[15px] font-bold">מה שינית בדרך</p>
         <ul class="list-disc ps-5 text-[14px]">${s.applied.map((a) => html`<li key=${a.id + a.at}>${a.title}</li>`)}</ul>`}
-      <p class="mt-5 border-t border-line pt-3 text-[12px] text-muted">תחזית היא לא הבטחה. המספרים מחושבים מהנתונים והאחוזים שבתוכנית, וההפרשה למס היא הערכה ולא ייעוץ מס.</p>
+      <p class="mt-5 border-t border-line pt-3 text-[12px] text-muted">תחזית היא לא הבטחה. המספרים מחושבים מהנתונים והאחוזים שבתוכנית, והם לפני מס: את המס מחשבים עם רואה החשבון, בפרק ראיית חשבון.</p>
     </article>
   </div>`;
 }

@@ -1,398 +1,166 @@
-// Step 5, parts 3-5: the goal, how much to sell, and the annual forecast with the four
-// checks and the fixes.
+// Step 5, parts 3-4: how much to sell, and the annual forecast with the checks and the
+// fixes. Amit, 11.11: the goal part is gone (the goal is a field here), the numbers are
+// before tax (the accountant chapter does the tax), and both parts are calmer: one place
+// to look, less text, the rest behind a click.
 import { html, useState, Icon, cx } from './lib.js';
-import { Button, Note, StepHeading, PartnerNote, FillButton, SharkAvatar, How, CalcLines } from './components.js';
-import { Chips, Field, inputCls, Tag, Sheet } from './ui.js';
-import { PARTS, ENTITIES, SETTINGS, FROM_STEP2, g, PARTNER } from './data.js';
-import { Money, Stepper, Section, Result, YesNo } from './parts.js';
+import { Button, StepHeading, SharkAvatar, How, CalcLines } from './components.js';
+import { Chips, inputCls, Tag, Sheet } from './ui.js';
+import { PARTS, FROM_STEP2, g } from './data.js';
+import { Money, Stepper, Section } from './parts.js';
 import { ForecastChart, ForecastLegend, ForecastTable } from './chart.js';
 import {
-  fmt, num, monthName, monthYear, todayAvg, weekOf, monthOfWeek, FIX_EDIT, fixTitle, applyFix, fixedMonthly, cushionTarget, setAsideMonthly, isLicensed, overCeiling, overCeilingToday, asLicensed, fullYearGross, neededYear, netPrice,
-  paidProducts, perHour, isSharkMix, suggestMix, taxRate, taxPctOf, taxAtGoal, creditPoints, TAX_2026, NI_MIN, KIDS, kidPoints, reservePoints, DEGREE_PTS, OLEH_PTS, SETTLE, fixes, withPicks, clientsText, forecast, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
+  fmt, num, monthName, monthYear, weekOf, monthOfWeek, FIX_EDIT, fixTitle, applyFix, overCeiling, netPrice,
+  paidProducts, isSharkMix, fixes, withPicks, clientsText, model, SCEN_NAME, SCENARIO_KEYS, PACE_DEFAULT, paceOf, paceEdited, growAt, weakIn,
 } from './calc.js';
 
-// ---------- part 3: the goal ----------
+// ---------- part 3: how much to sell ----------
 
-export function GoalScreen({ s, up, m }) {
-  const avg = s.stage === 'setup' ? null : todayAvg(s);
-  const below = avg && s.goal != null && s.goal <= avg.left;
-  const yearToday = avg ? avg.gross * 12 : 0;
-  const fc = m.fc;
-  return html`<div class="mx-auto max-w-[1000px] px-4 py-6 md:px-8">
-    <${StepHeading} n="5" eyebrow=${`חלק 3 מתוך 5 · ${PARTS[2]}`} title=${['כמה צריך ', 'להישאר', ' לך?']} sub="היעד הוא מה שנשאר לך בכיס בסוף החודש, אחרי כל ההוצאות והמס." />
-    <${Section} title="היעד החודשי" aside=${s.goal === FROM_STEP2.goal && html`<${Tag}>מ"אני והעסק"<//>`}>
-      <div class="grid items-end gap-4 md:grid-cols-[260px_1fr]">
-        <${Field} class="!mb-0" label="כמה כסף צריך להישאר לך בכל חודש?" hint=${s.goal === FROM_STEP2.goal ? 'מה שכתבת בשלב 2. אפשר לאשר או לשנות' : 'אפשר לשנות בכל רגע'}>
-          <${Money} label="היעד החודשי" invalid=${!s.goal} value=${s.goal} onChange=${(v) => up((d) => ((d.goal = v), (d.goalConfirmed = true)))} />
-        <//>
-        ${avg &&
-        html`<div class="flex flex-wrap gap-3 pb-6">
-          <div class="rounded-xl bg-canvas px-4 py-2"><small class="block text-[12px] font-bold text-muted">היום נשארים בממוצע</small><b class="font-display text-[20px] tabular-nums">${fmt(avg.left)}</b></div>
-          ${s.goal > 0 && html`<div class="rounded-xl bg-brand-50 px-4 py-2"><small class="block text-[12px] font-bold text-muted">היעד לעומת היום</small><b class="font-display text-[20px] tabular-nums text-brand-600">${s.goal > avg.left ? `פי ${num(s.goal / Math.max(1, avg.left), 1)}` : 'כבר שם'}</b></div>`}
-        </div>`}
+// One color per product, in the mix bar and next to its row.
+const MIX_COLORS = ['#0038b8', '#4f86e8', '#f0a830', '#2f9e6b', '#a5c0f2', '#c2410c'];
+
+// The numbers are before tax. The tax is done with the accountant, in the accountant chapter.
+function TaxNote({ s, notify }) {
+  return html`<div class="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-brand-300 bg-white px-4 py-3">
+    <span class="fb-chip-ic h-10 w-10 shrink-0"><${Icon} name="landmark" size=${19} /></span>
+    <p class="min-w-[200px] flex-1 text-[15px]"><b>החישובים כאן לא כוללים מס.</b> <span class="text-muted">${overCeiling(s) ? 'ובהכנסה שהיעד דורש, גם עוברים את תקרת עוסק פטור. ' : ''}את המס מחשבים עם רואה החשבון שלנו, בפרק ראיית חשבון.</span></p>
+    <${Button} variant="mini" onClick=${() => notify('במערכת: עוברים לפרק ראיית חשבון, למחשבון המס ולשיחה עם רואה החשבון', 'landmark')}>לחישוב המס עם רואה החשבון<${Icon} name="arrow-left" size=${15} /><//>
+  </div>`;
+}
+
+// What the full month asks for: leads, calls, new clients and the hours (the hours that the
+// user has can change right here).
+function Needs({ s, up, st }) {
+  const a = s.assumptions;
+  const wk = weekOf(a);
+  const per = (n) => num(Math.ceil(((n * 12) / 52) * 2) / 2, 1);
+  const hoursWk = (st.hours * 12) / 52;
+  const over = wk != null && hoursWk > wk;
+  const tiles = [
+    ['users', 'פניות', st.leads, `${per(st.leads)} בשבוע`],
+    ['phone', 'שיחות מכירה', st.calls, `${per(st.calls)} בשבוע`],
+    ['handshake', 'לקוחות חדשים', st.newClients, `${per(st.newClients)} בשבוע`],
+  ];
+  return html`<${Section} title="מה זה אומר בכל חודש" sub="כדי למכור את התמהיל, אלה המספרים שצריך להשיג.">
+    <div class="grid grid-cols-3 gap-2 sm:gap-3">
+      ${tiles.map(([icon, label, n, sub]) => html`<div key=${label} class="flex flex-col items-center gap-0.5 rounded-xl bg-brand-50 px-2 py-3 text-center">
+        <span class="text-brand-600"><${Icon} name=${icon} size=${20} /></span>
+        <b class="font-display text-[26px] leading-none tabular-nums">${num(n, n < 10 ? 1 : 0)}</b>
+        <span class="text-[13px] font-bold leading-tight">${label}</span>
+        <small class="text-[12px] text-muted">${sub}</small>
+      </div>`)}
+    </div>
+    <div class=${cx('mt-3 rounded-xl p-3', over ? 'bg-error-50' : 'bg-canvas')}>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[15px]">
+        <${Icon} name="clock" size=${18} class=${over ? 'text-error' : 'text-brand-600'} />
+        <span>עבודה ושיחות: <b class="tabular-nums">${num(hoursWk, 1)}</b> שעות בשבוע, מתוך</span>
+        <span class="w-[110px]"><${Money} suffix="שעות" label="שעות בשבוע שיש לך" invalid=${wk == null} value=${wk} onChange=${(v) => up((d) => { d.assumptions.hoursWeek = v; d.assumptions.hoursMonth = monthOfWeek(v); d.assumptions.hoursEdited = true; })} /></span>
+        <span>שיש לך</span>
       </div>
-      ${s.stage === 'active' &&
-      below &&
-      html`<${PartnerNote} class="mt-3 max-w-lg" title="יעד מעל מה שיש היום" mood="thinking" action=${html`<${FillButton} onClick=${() => up((d) => (d.goal = Math.ceil((avg.left * 1.2) / 500) * 500))}>להעמיד את היעד על ${fmt(Math.ceil((avg.left * 1.2) / 500) * 500)}<//>`}>
-        היעד כבר מושג: היום נשארים לך ${fmt(avg.left)} בחודש. עסק פעיל צריך יעד שמושך קדימה. מה דעתך על 20% יותר?
-      <//>`}
-    <//>
-
-    <${Section} title="סוג העוסק" sub=${'קובע כמה מכל מכירה נכנס לעסק, ומה עובר למע"מ.'}>
-      <${Chips} options=${ENTITIES} value=${s.entity} onChange=${(v) => up((d) => ((d.entity = v), (d.taxPct = SETTINGS.taxPct[v])))} />
-      <p class="mt-2 text-[14px] text-muted">${s.entity === 'exempt' ? `עוסק פטור לא גובה מע"מ, עד תקרה של ${fmt(SETTINGS.exemptCeiling)} בשנה.` : `עוסק מורשה גובה מע"מ: מכל מחיר בסל ${SETTINGS.vatPct}% עוברים למדינה.`}</p>
-      ${overCeilingToday(s)
-        ? html`<div class="mt-3 flex flex-wrap items-start gap-3 rounded-xl border border-warn/30 bg-warn-50 p-3 text-[14px]">
-            <${Icon} name="triangle-alert" size=${18} class="mt-0.5 shrink-0 text-warn" />
-            <p class="min-w-0 flex-1"><b>כבר היום ${g('אתה', 'את')} מעל התקרה.</b> בקצב של היום העסק מכניס ${fmt(yearToday)} בשנה, ותקרת עוסק פטור היא ${fmt(SETTINGS.exemptCeiling)}. ההמלצה: לעבור לעוסק מורשה, בתיאום עם רואה החשבון. בעוסק מורשה ${SETTINGS.vatPct}% מכל מחיר עוברים למע"מ.</p>
-            <${Button} variant="mini" onClick=${() => up((d) => (d.entity = 'licensed'), 'עברת לעוסק מורשה בתוכנית')}>לחשב כעוסק מורשה<//>
-          </div>`
-        : overCeiling(s) &&
-          html`<div class="mt-3 flex items-start gap-2 rounded-xl border border-brand-300 bg-brand-50 p-3 text-[14px]"><${Icon} name="info" size=${18} class="mt-0.5 shrink-0 text-brand-600" /><div class="min-w-0 flex-1">
-            <p><b>כדאי לדעת:</b> כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס לפחות ${fmt(m.st.needed)} בחודש, כלומר ${fmt(neededYear(s))} בשנה. זה מעל תקרת עוסק פטור (${fmt(SETTINGS.exemptCeiling)}). מתחילים כעוסק פטור, ועוברים לעוסק מורשה כשההכנסות מתקרבות לתקרה. אז ${SETTINGS.vatPct}% מכל מחיר יעברו למע"מ, ובחודש מלא יישארו לך ${fmt(asLicensed(s).left)} במקום ${fmt(m.st.profit - m.st.setAside)}.</p>
-            <${How}><${CalcLines} lines=${[
-              ['היעד: מה שנשאר לך בחודש', fmt(s.goal)],
-              m.st.setAside > 0 && ['+ לכרית הביטחון', fmt(m.st.setAside)],
-              [`+ מס וביטוח לאומי (${taxPctOf(s)}% מהרווח)`, fmt(m.st.beforeTax - s.goal - m.st.setAside)],
-              ['+ הוצאות קבועות', fmt(m.st.fixed)],
-              ['+ עלויות המוצרים', fmt(m.st.cogs)],
-              ['לפחות בחודש', fmt(m.st.needed), true],
-              ['× 12 חודשים', fmt(neededYear(s)), true],
-            ].filter(Boolean)} note=${`התמהיל בחלק 4 בנוי ממכירות שלמות, אז הוא מכניס קצת יותר: ${fmt(m.st.gross)} בחודש.`} /><//>
-          </div></div>`}
-    <//>
-
-    <${TaxCalc} s=${s} up=${up} />
-
-    ${s.stage === 'active' &&
-    html`<${Section} title="יעד שנתי, לפי רבעונים" sub="הרבעונים מחולקים לפי קצב הצמיחה בתחזית: בהתחלה פחות, בסוף השנה יותר.">
-        <div class="mb-4 max-w-[260px]">
-          <${Field} class="!mb-0" label="כמה צריך להישאר לך בשנה?" hint=${s.annualGoal ? 'קבעת בעצמך' : `12 חודשים של ${fmt(s.goal)}`}>
-            <${Money} label="יעד שנתי" value=${s.annualGoal ?? (s.goal || 0) * 12} onChange=${(v) => up((d) => (d.annualGoal = v))} />
-          <//>
-        </div>
-        <${Quarters} fc=${fc} />
-      <//>
-      <${Section} title="כרית הביטחון כיעד" sub=${`היעד: ${fmt(cushionTarget(s))} בעסק. הסכום לכרית יוצא כל חודש לפני היעד שלך.`}>
-        ${(s.bank.amount || 0) >= cushionTarget(s)
-          ? html`<p class="text-[15px]">הכרית כבר מלאה: ${fmt(s.bank.amount)} בחשבון.</p>`
-          : html`<div class="flex flex-wrap items-end gap-5">
-              <div>
-                <p class="mb-1 text-[14px] font-bold">תוך כמה זמן למלא אותה?</p>
-                <${Chips} small options=${[3, 6, 9, 12].map((n) => ({ id: n, label: `${n} חודשים` }))} value=${s.cushionMonths} onChange=${(v) => up((d) => (d.cushionMonths = v))} />
-              </div>
-              <p class="text-[15px]"><b class="font-display text-[20px] tabular-nums">${fmt(setAsideMonthly(s))}</b> בחודש לכרית${fc.fillIdx >= 0 ? html` · מלאה ב${monthYear(fc.rows[fc.fillIdx].key)}` : fc.fillIdx === -1 ? ' · לא מתמלאת בשנה הקרובה' : ''}</p>
-            </div>`}
-      <//>`}
-  </div>`;
-}
-
-// ---------- the tax calculator ----------
-// The user fills what entitles them to credit points; the result is a clear rate: how much
-// of every shekel of profit goes to income tax and National Insurance, at the profit that
-// leaves the goal. The rate is used in parts 4-5. "I have a rate from my accountant" types it.
-const DEGREE = [{ id: 0, label: 'לא' }, { id: 1, label: 'תואר ראשון' }, { id: 2, label: 'תואר שני' }, { id: 3, label: 'ראשון ושני' }, { id: 4, label: 'תעודת מקצוע' }];
-const OLEH = [{ id: 0, label: 'לא' }, { id: 1, label: 'בשנה הראשונה' }, { id: 2, label: 'שנה עד 2.5 שנים' }, { id: 3, label: '2.5 עד 3.5 שנים' }, { id: 4, label: '3.5 עד 4.5 שנים' }];
-const ptsText = (n) => (n === 1 ? 'נקודה אחת' : `${num(n, 2)} נקודות`);
-
-function Right({ title, hint, pts, children }) {
-  return html`<div class="rounded-xl bg-white p-3 ring-1 ring-line">
-    <p class="mb-2 flex items-baseline justify-between gap-2"><b class="text-[15px]">${title}</b>${pts > 0 && html`<span class="shrink-0 rounded-full bg-money-50 px-2 py-0.5 text-[12px] font-bold text-money">+${ptsText(pts)}</span>`}</p>
-    ${children}
-    ${hint && html`<p class="mt-1.5 text-[12px] text-muted">${hint}</p>`}
-  </div>`;
-}
-
-function TaxCalc({ s, up }) {
-  const c = s.taxCalc;
-  const set = (f, v) => up((d) => (d.taxCalc = { ...d.taxCalc, [f]: v }));
-  const extra = !!(c.soldier || c.degree || c.reserveDays || c.oleh || c.single || c.settle);
-  const [more, setMore] = useState(extra);
-  const setKid = (f, v) => up((d) => (d.taxCalc = { ...d.taxCalc, kids: { ...(d.taxCalc.kids || {}), [f]: v } }));
-  const r = taxAtGoal(s);
-  const pct = num(r.rate * 100, 1);
-  const pts = creditPoints(c);
-  const month = (x) => fmt(x / 12);
-  const manual = s.taxManual;
-  const toManual = () => up((d) => ((d.taxManual = true), (d.taxPct = Math.round(r.rate * 1000) / 10)));
-  const lines = [
-    ['רווח לפני מס בשנה', fmt(r.P)],
-    r.salary > 0 && ['המשכורת שלך בשנה (העסק מתחיל מהמדרגה שהיא מסיימת)', fmt(r.salary)],
-    r.deduct > 0 && ['פחות 52% מהביטוח הלאומי (מוכר כהוצאה)', fmt(-r.deduct)],
-    ['מס הכנסה לפי המדרגות', fmt(-r.gross)],
-    r.gross - r.incomeTax > 0 && [`פחות ${ptsText(pts.total)} זיכוי (${fmt(TAX_2026.point)} לנקודה)${r.sRate > 0 ? ` והנחת יישוב (${r.sRate}% עד ${fmt(r.sCap)})` : ''}${r.salary > 0 ? ', מה שהמשכורת לא ניצלה' : ''}`, fmt(r.gross - r.incomeTax)],
-    r.salary > 0 && r.gross - r.incomeTax <= 0 && ['נקודות הזיכוי כבר מנוצלות במס על המשכורת', fmt(0)],
-    ['ביטוח לאומי ובריאות (7.7% עד 7,703 ₪ בחודש, 18% מעל)', fmt(-r.ni)],
-    r.niMin > 0 && ['פחות המינימום שכבר בהוצאות הקבועות', fmt(Math.min(r.ni, r.niMin))],
-    ['ביחד מס וביטוח לאומי בשנה', fmt(-r.total), true],
-    ['נשאר לך בשנה', fmt(r.P - r.total)],
-    [`${fmt(r.total)} ÷ ${fmt(r.P)}`, `${pct}%`, true],
-  ].filter(Boolean);
-  return html`<${Section} title="כמה מס ${g('תשלם', 'תשלמי')}?" sub="המס משתנה מאדם לאדם. ${g('מלא', 'מלאי')} את מה שנכון לגביך, והמחשבון יחשב את האחוז שלך.">
-    ${manual
-      ? html`<div class="mb-4 flex flex-wrap items-end gap-4 rounded-2xl border-[1.5px] border-brand-300 bg-brand-50 p-4">
-          <${Field} class="!mb-0 w-[200px]" label="האחוז מרואה החשבון" hint="מהרווח, מס וביטוח לאומי ביחד">
-            <${Money} suffix="%" label="אחוז מס" value=${s.taxPct} onChange=${(v) => up((d) => (d.taxPct = Math.min(60, v ?? 0)))} />
-          <//>
-          <button type="button" class="mb-6 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => up((d) => (d.taxManual = false))}>לחזור למחשבון (${pct}%)</button>
-        </div>`
-      : html`<div class="rise mb-4 rounded-2xl border-[1.5px] border-brand-300 bg-brand-50 p-4 md:p-5" role="status">
-          <p class="text-[14px] font-bold text-muted">מכל שקל של רווח, למס ולביטוח הלאומי ${g('תעביר', 'תעבירי')}</p>
-          <p class="font-display text-[34px] font-black leading-tight text-brand-600 tabular-nums md:text-[40px]">${pct}%</p>
-          <p class="mt-1 text-[15px]">כדי שיישארו לך <b>${fmt(s.goal || 0)}</b> בחודש, העסק צריך להרוויח <b>${month(r.P)}</b> בחודש לפני מס. מזה <b>${month(r.incomeTax)}</b> מס הכנסה ו-<b>${month(r.niNet)}</b> ביטוח לאומי${r.niMin > 0 ? ' (מעבר למינימום שכבר בהוצאות)' : ''}.</p>
-          <${How} class="mt-2"><${CalcLines} lines=${lines} note="האחוז הוא ממוצע על כל הרווח: המדרגות עולות ככל שמרוויחים יותר, ונקודות הזיכוי והנחת היישוב מורידות מהמס. נתוני 2026." /><//>
-        </div>`}
-
-    <div class="grid gap-3 md:grid-cols-2">
-      <${Right} title="מי ${g('אתה', 'את')}?" hint="כל תושב מקבל 2.25 נקודות, ואישה עוד חצי. אלה מגיעות לכולם." pts=${c.gender === 'f' ? 2.75 : 2.25}>
-        <${Chips} small options=${[{ id: 'm', label: 'גבר' }, { id: 'f', label: 'אישה' }]} value=${c.gender} onChange=${(v) => set('gender', v)} />
-      <//>
-      <${Right} title="העסק הוא ההכנסה היחידה שלך?" hint=${c.sole === false ? 'המשכורת כבר משתמשת במדרגות הנמוכות ובנקודות הזיכוי, אז העסק מתחיל ממדרגה גבוהה יותר.' : 'אם יש גם משכורת, המס על העסק גבוה יותר.'}>
-        <${YesNo} value=${c.sole !== false} onChange=${(v) => set('sole', v)} />
-        ${c.sole === false && html`<div class="mt-2 max-w-[220px]"><${Field} class="!mb-0" label="משכורת חודשית ברוטו"><${Money} label="משכורת חודשית" value=${c.salary} onChange=${(v) => set('salary', v)} /><//></div>`}
-      <//>
-      <${Right} title="ילדים, לפי הגיל השנה" hint=${c.gender === 'f' ? 'עד גיל 5 אותן נקודות לשני ההורים. מגיל 6 עד 17: 2 נקודות לאם.' : 'עד גיל 5 אותן נקודות לשני ההורים. מגיל 6 עד 17: נקודה לאב.'} pts=${kidPoints(c)}>
-        <div class="grid grid-cols-1 gap-x-4 gap-y-1.5 text-[14px] sm:grid-cols-2">
-          ${KIDS.filter(([, , m, d]) => (c.gender === 'f' ? m : d) > 0).map(([f, label]) => html`<span key=${f} class="flex items-center justify-between gap-2">${label}<${Stepper} label=${`ילדים: ${label}`} value=${(c.kids && c.kids[f]) || 0} onChange=${(v) => setKid(f, v)} /></span>`)}
-        </div>
-      <//>
+      ${wk != null && html`<div class="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e3ddd0]"><div class=${cx('h-full rounded-full transition-all', over ? 'bg-error' : 'bg-brand-600')} style=${{ width: `${Math.min(100, (hoursWk / (wk || 1)) * 100)}%` }}></div></div>`}
+      ${over && html`<p class="mt-1.5 text-[14px] font-bold text-error">זה יותר שעות ממה שיש לך. בתחזית נראה מה אפשר לשנות.</p>`}
     </div>
-    ${!more && html`<button type="button" aria-expanded="false" class="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-dashed border-brand-300 bg-white px-3 py-2.5 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => setMore(true)}>
-      <span><b class="block text-[15px] text-brand-600">עוד זכויות שמורידות את המס</b><small class="text-[13px] text-muted">שחרור מהצבא, תואר, מילואים, עלייה, הורה יחיד, יישוב עם הנחה</small></span>
-      <${Icon} name="chevron-down" size=${20} class="shrink-0 text-brand-600" />
-    </button>`}
-    ${more && html`<button type="button" aria-expanded="true" class="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-brand-300 bg-brand-50 px-3 py-2.5 text-start hover:border-brand-600 cursor-pointer" onClick=${() => setMore(false)}>
-      <b class="text-[15px] text-brand-600">עוד זכויות שמורידות את המס</b>
-      <span class="flex items-center gap-1 text-[13px] font-bold text-brand-600">להקטין<${Icon} name="chevron-up" size=${18} /></span>
-    </button>`}
-    ${more && html`<div class="rise mt-3 grid gap-3 md:grid-cols-2">
-      <${Right} title=${`${g('השתחררת', 'השתחררת')} מצה"ל או משירות לאומי ב-3 השנים האחרונות?`} hint=${`${c.gender === 'f' ? '22' : '23'} חודשי שירות ומעלה (שירות לאומי: 24): 2 נקודות. 12 חודשים ומעלה: נקודה.`} pts=${[0, 1, 2][c.soldier || 0]}>
-        <${Chips} small options=${[{ id: 0, label: 'לא' }, { id: 1, label: 'שנה ומעלה' }, { id: 2, label: c.gender === 'f' ? '22 חודשים ומעלה' : '23 חודשים ומעלה' }]} value=${c.soldier || 0} onChange=${(v) => set('soldier', v)} />
-      <//>
-      <${Right} title="סיימת תואר או לימודי מקצוע לאחרונה?" hint="תואר ראשון: נקודה בכל שנה, עד 3 שנים אחרי הסיום. תואר שני: חצי נקודה, שנתיים. תעודת מקצוע: נקודה, במקום תואר." pts=${DEGREE_PTS[c.degree || 0]}>
-        <${Chips} small options=${DEGREE} value=${c.degree || 0} onChange=${(v) => set('degree', v)} />
-      <//>
-      <${Right} title=${`${g('שירתת', 'שירתת')} במילואים כ${g('לוחם', 'לוחמת')} בשנה שעברה?`} hint="מ-30 ימים: חצי נקודה, ועוד רבע נקודה על כל 5 ימים מ-50, עד 4 נקודות." pts=${reservePoints(c.reserveDays)}>
-        <div class="max-w-[160px]"><${Money} suffix="ימים" label="ימי מילואים כלוחם" value=${c.reserveDays || null} onChange=${(v) => set('reserveDays', Math.min(366, v ?? 0))} /></div>
-      <//>
-      <${Right} title=${`${g('עלית', 'עלית')} לארץ ב-4.5 השנים האחרונות?`} hint="שנה ראשונה: נקודה. עד 2.5 שנים: 3 נקודות בשנה. עד 3.5: 2. עד 4.5: נקודה." pts=${OLEH_PTS[c.oleh || 0]}>
-        <${Chips} small options=${OLEH} value=${c.oleh || 0} onChange=${(v) => set('oleh', v)} />
-      <//>
-      <${Right} title=${`${g('הורה יחיד, או משלם', 'הורה יחידה, או משלמת')} מזונות?`} hint="נקודה." pts=${c.single ? 1 : 0}>
-        <${YesNo} value=${!!c.single} onChange=${(v) => set('single', v)} />
-      <//>
-      <${Right} title=${`${g('גר', 'גרה')} ביישוב שמקבל הנחה ממס?`} hint=${c.settle ? 'ההנחה יורדת ישר מהמס, עד התקרה של היישוב.' : 'יישובים בצפון, בדרום ובפריפריה. במערכת בוחרים את היישוב מהרשימה של רשות המסים.'}>
-        <${YesNo} value=${!!c.settle} onChange=${(v) => set('settle', v ? 1 : 0)} />
-        ${!!c.settle && html`<div class="mt-2"><p class="mb-1 text-[13px] font-bold">ההנחה של היישוב שלך</p><${Chips} small options=${SETTLE.map(([r2, cap], i) => ({ id: i + 1, label: `${r2}% עד ${num(cap / 1000)} אלף` }))} value=${c.settle} onChange=${(v) => set('settle', v)} /></div>`}
-      <//>
-    </div>`}
-
-    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-      <p class="text-[14px]"><b>${ptsText(pts.total)} זיכוי</b> = ${fmt(pts.total * TAX_2026.point)} פחות מס בשנה.${r.incomeTax <= 0 && r.gross > 0 ? ' המס שלך נמוך מזה, אז לא הכול מנוצל.' : ''}</p>
-      ${!manual && html`<button type="button" class="text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${toManual}>יש לך אחוז מרואה החשבון? להזין אותו</button>`}
-    </div>
-    <p class="mt-2 text-[12px] text-muted">הערכה לפי נתוני המס והביטוח הלאומי של 2026, לא ייעוץ מס. לא כולל הפקדות לפנסיה ולקרן השתלמות, שמורידות את המס בפועל.</p>
   <//>`;
 }
 
-function Quarters({ fc }) {
-  return html`<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-    ${fc.quarters.map((q) => {
-      const ok = q.profit >= q.goal;
-      return html`<div key=${q.q} class="rounded-xl border border-line bg-white p-3">
-        <small class="block text-[12px] font-bold text-muted">רבעון ${q.q} · ${monthName(q.from)}-${monthName(q.to)}</small>
-        <b class="block font-display text-[18px] tabular-nums">${fmt(q.goal)}</b>
-        <span class=${cx('text-[13px] font-semibold', ok ? 'text-money' : 'text-warn')}>תחזית ${fmt(q.profit)}</span>
-      </div>`;
-    })}
-  </div>`;
-}
-
-// ---------- part 4: how much to sell ----------
-
+// The rates behind the numbers: closed, one line each.
 function Assumptions({ s, up }) {
   const a = s.assumptions;
   const monthly = paidProducts(s).find((p) => p.kind === 'monthly');
-  const of10 = (pct) => num((pct || 0) / 10, 1);
-  const cards = [
-    ['phone', 'leadToCall', 'כמה מהפניות קובעות שיחה', '%', 'ממוצע בתחום',
-      `מתוך 10 פניות, ${of10(a.leadToCall)} קובעות שיחת מכירה.`],
-    ['handshake', 'closeRate', 'כמה מהשיחות נגמרות בקנייה', '%', 'ממוצע בתחום',
-      `מתוך 10 שיחות מכירה, ${of10(a.closeRate)} נגמרות בקנייה.`],
-    monthly && ['repeat', 'stayMonths', 'כמה זמן לקוח חודשי נשאר', 'חודשים', 'ממוצע בתחום',
-      `לקוח ב${monthly.short || monthly.name} משלם בממוצע ${num(a.stayMonths)} חודשים, ואז עוזב.`],
-  ].filter(Boolean);
-  const wk = weekOf(a);
-  return html`<${Section} title="על מה החישוב מבוסס" sub="כל המספרים בחלק הזה יוצאים מכאן. אפשר לשנות כל אחד, והכל מתעדכן. את האחוזים כדאי לעדכן כשיש לך נתונים משלך.">
-    <label class="mb-3 flex flex-col gap-2 rounded-xl border-[1.5px] border-brand-300 bg-brand-50 p-3 sm:p-4">
-      <span class="flex items-start gap-2"><span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name="clock" size=${18} /></span><b class="min-w-0 flex-1 text-[16px] leading-snug">כמה שעות בשבוע יש לך לעבודה עם לקוחות ולשיחות מכירה?</b>${!a.hoursEdited && wk != null && html`<${Tag}>מ"אני והעסק"<//>`}</span>
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="w-40"><${Money} suffix="שעות" label="שעות בשבוע" invalid=${wk == null} value=${wk} onChange=${(v) => up((d) => { d.assumptions.hoursWeek = v; d.assumptions.hoursMonth = monthOfWeek(v); d.assumptions.hoursEdited = true; })} /></div>
-        ${wk != null && html`<span class="text-[14px] font-semibold">= ${num(a.hoursMonth)} שעות בחודש</span>`}
-      </div>
-      <span class="text-[13px] text-muted">${a.hoursEdited ? 'שינית כאן. כל החלק מחושב לפי המספר הזה.' : 'מה שמילאת ב"אני והעסק". אם השתנה משהו, אפשר לשנות כאן.'} רק שעות שאפשר לעבוד בהן עם לקוחות או לדבר עם לקוחות חדשים, בלי שיווק ואדמיניסטרציה.</span>
-    </label>
-    <div class="grid gap-3 sm:grid-cols-2">
-      ${cards.map(([icon, key, label, suffix, tag, means]) => html`<label key=${key} class="flex flex-col gap-2 rounded-xl border-[1.5px] border-line bg-white p-3">
-        <span class="flex items-center gap-2"><span class="fb-chip-ic h-8 w-8 shrink-0"><${Icon} name=${icon} size=${16} /></span><b class="min-w-0 flex-1 text-[15px] leading-tight">${label}</b>${tag && html`<${Tag}>${tag}<//>`}</span>
-        <${Money} suffix=${suffix} label=${label} invalid=${a[key] == null} value=${a[key]} onChange=${(v) => up((d) => (d.assumptions[key] = v))} />
-        <span class="text-[13px] text-muted">${means}</span>
-      </label>`)}
-    </div>
-    <p class="mt-3 text-[13px] text-muted">לפי החוק היום: מע"מ ${SETTINGS.vatPct}%, תקרת עוסק פטור ${fmt(SETTINGS.exemptCeiling)} בשנה. מס וביטוח לאומי ${taxPctOf(s)}% מהרווח, כמו שיצא בחלק 3.</p>
-  <//>`;
-}
-
-// The funnel, from the leads that reach the business to the clients who buy: three bars
-// that narrow down, with the rate between each two.
-function Funnel({ st, a, wk }) {
   const rows = [
-    ['users', st.leads, 'פניות שמגיעות אליך', '100%'],
-    ['phone', st.calls, 'שיחות מכירה', '82%'],
-    ['handshake', st.newClients, 'לקוחות חדשים', '64%'],
-  ];
-  const rates = [`${a.leadToCall}% מהפניות קובעות שיחה`, `${a.closeRate}% מהשיחות נגמרות בקנייה`];
-  return html`<ol class="flex flex-col items-center">
-    ${rows.map(
-      ([icon, n, label, w], i) => html`<li key=${label} class="flex w-full flex-col items-center">
-        ${i > 0 && html`<span class="my-1 inline-flex items-center gap-1.5 text-[13px] font-bold text-brand-600"><${Icon} name="arrow-down" size=${16} />${rates[i - 1]}</span>`}
-        <div class=${cx('flex w-full items-center gap-3 rounded-xl border-[1.5px] px-3 py-2.5', i === 2 ? 'border-brand-600 bg-brand-100' : 'border-brand-300 bg-brand-50')} style=${{ maxWidth: w }}>
-          <span class="text-brand-600"><${Icon} name=${icon} size=${22} /></span>
-          <b class="font-display text-[26px] leading-none tabular-nums">${num(n, n < 10 ? 1 : 0)}</b>
-          <span class="min-w-0 flex-1 text-[15px] font-bold leading-tight">${label}<small class="block text-[12px] font-semibold text-muted">בחודש · ${num(Math.ceil(wk(n) * 2) / 2, 1)} בשבוע</small></span>
-        </div>
-      </li>`,
-    )}
-  </ol>`;
-}
-
-// A progress bar. Over the top is red only for hours (more income is good news).
-function Bar({ value, max, tone = 'brand', label, sub, limit }) {
-  const p = Math.min(100, (value / (max || 1)) * 100);
-  const over = limit && value > max;
-  return html`<div class="mb-3">
-    <div class="mb-1 flex items-baseline justify-between gap-2 text-[14px]"><span class="font-bold">${label}</span><span class="tabular-nums text-muted">${sub}</span></div>
-    <div class="h-2.5 overflow-hidden rounded-full bg-[#e3ddd0]"><div class=${cx('h-full rounded-full transition-all', over ? 'bg-error' : tone === 'money' ? 'bg-money' : 'bg-brand-600')} style=${{ width: `${p}%` }}></div></div>
-  </div>`;
+    ['leadToCall', '%', 'מהפניות קובעות שיחת מכירה'],
+    ['closeRate', '%', 'מהשיחות נגמרות בקנייה'],
+    monthly && ['stayMonths', 'חודשים', `לקוח ב${monthly.short || monthly.name} נשאר בממוצע`],
+  ].filter(Boolean);
+  const empty = rows.some(([k]) => a[k] == null);
+  return html`<details class="fb-panel mb-5 !p-4" open=${empty}>
+    <summary class="cursor-pointer text-[15px] font-bold text-brand-600">על מה זה מבוסס? <span class="font-semibold text-muted">ממוצעים בתחום, אפשר לשנות</span></summary>
+    <ul class="mt-3 flex flex-col gap-2">
+      ${rows.map(([key, suffix, text]) => html`<li key=${key} class="flex flex-wrap items-center gap-2 text-[15px]">
+        <span class="w-[120px]"><${Money} suffix=${suffix} label=${text} invalid=${a[key] == null} value=${a[key]} onChange=${(v) => up((d) => (d.assumptions[key] = v))} /></span>
+        <span>${text}</span>
+      </li>`)}
+    </ul>
+  </details>`;
 }
 
 export function SellScreen({ s, up, m, notify, undoTo }) {
   const st = m.st;
   const mix = m.mix;
-  const a = s.assumptions;
   const ps = paidProducts(s);
-  const avg = s.stage === 'setup' ? null : todayAvg(s);
   const setN = (id, n) => up((d) => (d.mix = { ...mix, [id]: n }));
   const shark = isSharkMix(s);
-  const monthly = ps.find((p) => p.kind === 'monthly');
-  const program = ps.find((p) => p.kind === 'program');
-  const wk = (n) => (n * 12) / 52;
-  const t = taxRate(s);
+  const goal = s.goal || 0;
   const left = st.profit - st.setAside;
-  return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
-    <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך 5 · ${PARTS[3]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מהיעד אחורה: כמה העסק צריך להכניס, מאיזה מוצרים, וכמה לידים ושיחות זה אומר." />
-    <${Result} icon="calculator" title=${`כדי שיישארו לך ${fmt(s.goal)} בחודש, העסק צריך להכניס`} big=${`${fmt(st.needed)} בחודש`}>
-      <span class="block text-[14px]">היעד, ועוד המס עליו, ועוד כל ההוצאות.${overCeiling(s) ? ` בסכום הזה העסק יעבור את תקרת עוסק פטור: כשתגיע${g('', 'י')} אליה, ${g('תעבור', 'תעברי')} לעוסק מורשה, ובחודש מלא יישארו לך ${fmt(asLicensed(s).left)} (פירוט בחלק 3).` : ''}</span>
-      <${How}><${CalcLines}
+  const ok = goal > 0 && left >= goal;
+  const out = st.cogs + st.fixed + st.setAside;
+  const color = (i) => MIX_COLORS[i % MIX_COLORS.length];
+  const income = (p) => (mix[p.id] || 0) * netPrice(s, p);
+  return html`<div class="mx-auto max-w-[1000px] px-4 py-6 md:px-8">
+    <${StepHeading} n="5" eyebrow=${`חלק 3 מתוך ${PARTS.length} · ${PARTS[2]}`} title=${['כמה צריך ', 'למכור', '?']} sub="מה מוכרים בחודש אחד, כדי שיישאר לך היעד." />
+
+    <div class="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-brand-50 px-4 py-3">
+      <${Icon} name="target" size=${22} class="text-brand-600" />
+      <b class="text-[16px]">היעד שלך: יישארו לך בכל חודש</b>
+      <span class="w-[150px]"><${Money} label="היעד החודשי" invalid=${!s.goal} value=${s.goal} onChange=${(v) => up((d) => ((d.goal = v), (d.goalConfirmed = true)))} /></span>
+      ${s.goal === FROM_STEP2.goal && html`<${Tag}>מ"אני והעסק"<//>`}
+    </div>
+
+    <${Section}
+      title="התמהיל: מה מוכרים בחודש מלא"
+      sub="חודש מלא = חודש שבו מוכרים את כל מה שכאן. בתחזית נראה מתי מגיעים אליו."
+      aside=${shark ? html`<${Tag} tone="blue"><img src="assets/shark/shark-happy-sm.svg" alt="" class="h-4 w-4 rounded-full bg-white" />ההצעה של הכריש<//>` : html`<button type="button" class="shrink-0 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => { const back = s; up((d) => (d.mix = null)); notify('חזרת להצעה של הכריש', 'rotate-ccw', () => undoTo(back)); }}>להחזיר להצעה של הכריש</button>`}
+    >
+      ${st.income > 0 && html`<div class="mb-1 flex h-4 overflow-hidden rounded-full bg-[#e3ddd0]" aria-hidden="true">
+        ${ps.map((p, i) => income(p) > 0 && html`<span key=${p.id} class="h-full transition-all" style=${{ width: `${(income(p) / st.income) * 100}%`, background: color(i) }}></span>`)}
+      </div>`}
+      <ul class="flex flex-col divide-y divide-line">
+        ${ps.map((p, i) => {
+          const n = mix[p.id] || 0;
+          return html`<li key=${p.id} class="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
+            <span class="h-3.5 w-3.5 shrink-0 rounded-full" style=${{ background: color(i) }}></span>
+            <div class="min-w-[150px] flex-1">
+              <b class="block text-[16px] leading-snug">${p.short || p.name}</b>
+              <small class="text-[13px] text-muted">${fmt(netPrice(s, p))} ${p.kind === 'monthly' ? 'לחודש · לקוחות פעילים' : 'למכירה'}</small>
+            </div>
+            <span class="ms-auto flex items-center gap-3">
+              <${Stepper} label=${p.name} value=${n} onChange=${(v) => setN(p.id, v)} />
+              <b class="w-[84px] text-end font-display text-[17px] tabular-nums">${fmt(income(p))}</b>
+            </span>
+          </li>`;
+        })}
+      </ul>
+
+      <div class="mt-3 grid grid-cols-[1fr_auto_1fr_auto_1.15fr] items-stretch gap-1 sm:gap-2" role="status" aria-live="polite">
+        <div class="rounded-xl bg-canvas px-1.5 py-2.5 text-center sm:px-3"><small class="block text-[12px] font-bold text-muted">נכנס</small><b class="whitespace-nowrap font-display text-[15px] tabular-nums sm:text-[20px]">${fmt(st.income)}</b></div>
+        <span class="self-center font-display text-[20px] font-black text-muted">−</span>
+        <div class="rounded-xl bg-canvas px-1.5 py-2.5 text-center sm:px-3"><small class="block text-[12px] font-bold text-muted">יוצא</small><b class="whitespace-nowrap font-display text-[15px] tabular-nums sm:text-[20px]">${fmt(out)}</b></div>
+        <span class="self-center font-display text-[20px] font-black text-muted">=</span>
+        <div class=${cx('rounded-xl px-1.5 py-2.5 text-center ring-2 sm:px-3', ok ? 'bg-money-50 ring-money/40' : 'bg-error-50 ring-error/40')}><small class="block text-[12px] font-bold text-muted">נשאר לך</small><b class=${cx('whitespace-nowrap font-display text-[17px] font-black tabular-nums sm:text-[24px]', ok ? 'text-money' : 'text-error')}>${fmt(left)}</b></div>
+      </div>
+      <p class=${cx('mt-2 flex items-center gap-1.5 text-[15px] font-bold', ok ? 'text-money' : 'text-error')}>
+        <${Icon} name=${ok ? 'circle-check' : 'circle-alert'} size=${18} />
+        ${!goal ? 'צריך יעד, למעלה' : ok ? (left - goal >= 50 ? `מגיעים ליעד, ועוד ${fmt(left - goal)}` : 'מגיעים ליעד') : `חסרים ${fmt(goal - left)} ליעד. אפשר להוסיף מכירות`}
+      </p>
+      <${How} class="mt-1"><${CalcLines}
         lines=${[
-          ['היעד: מה שנשאר לך', fmt(s.goal)],
-          st.setAside > 0 && ['+ לכרית הביטחון', fmt(st.setAside)],
-          [`÷ ${num(100 - taxPctOf(s), 1)}% (${taxPctOf(s)}% מהרווח הולכים למס)`, fmt(st.beforeTax), true],
-          ['+ הוצאות קבועות', fmt(st.fixedBase)],
-          st.fixedGrow > 0 && ['+ העלייה בפרסום ובכלים כשהעסק גדל', fmt(st.fixedGrow)],
-          ['+ עלויות המוצרים', fmt(st.cogs)],
-          ['ביחד', fmt(st.needed), true],
-          isLicensed(s) && ['עם המע"מ, הלקוחות משלמים', fmt(st.needed * (1 + SETTINGS.vatPct / 100))],
-        ]}
+          ['נכנס מהמכירות', fmt(st.income)],
+          ['פחות עלויות המוצרים', fmt(-st.cogs)],
+          ['פחות הוצאות קבועות', fmt(-st.fixedBase)],
+          st.fixedGrow > 0 && ['פחות העלייה בפרסום ובכלים כשהעסק גדל', fmt(-st.fixedGrow)],
+          st.setAside > 0 && ['פחות לכרית הביטחון', fmt(-st.setAside)],
+          ['נשאר לך, לפני מס', fmt(left), true],
+        ].filter(Boolean)}
+        note=${st.vat > 1 ? `בלי המע"מ (${fmt(st.vat)}): הוא עובר למדינה.` : ''}
       /><//>
     <//>
 
-    <div class="grid items-start gap-5 lg:grid-cols-[1fr_340px]">
-      <div>
-        <${Section}
-          title="התמהיל: כמה מכל מוצר בחודש מלא"
-          sub=${`חודש מלא = חודש שבו העסק מוכר את כל התמהיל, ומכניס ${fmt(st.income)}. כמה זמן לוקח להגיע לשם, קובעים בחלק 5.`}
-          aside=${shark ? html`<${Tag} tone="blue"><img src="assets/shark/shark-happy-sm.svg" alt="" class="h-4 w-4 rounded-full bg-white" />ההצעה של הכריש<//>` : html`<button type="button" class="shrink-0 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => { const back = s; up((d) => (d.mix = null)); notify('חזרת להצעה של הכריש', 'rotate-ccw', () => undoTo(back)); }}>להחזיר להצעה של הכריש</button>`}
-        >
-          <ul class="flex flex-col divide-y divide-line">
-            ${ps.map((p) => {
-              const n = mix[p.id] || 0;
-              return html`<li key=${p.id} class="flex flex-wrap items-center gap-3 py-3">
-                <div class="min-w-0 flex-1">
-                  <b class="block text-[16px]">${p.short || p.name}</b>
-                  <small class="text-[13px] text-muted">${fmt(netPrice(s, p))}${p.kind === 'monthly' ? ' לחודש' : ''} · ${fmt(perHour(s, p))} לשעה${p.kind === 'program' ? ` · ${num(p.hours / p.months, 1)} שעות בחודש, ${p.months} חודשים` : ''}</small>
-                </div>
-                <span class="text-[13px] font-semibold text-muted">${p.kind === 'monthly' ? 'לקוחות פעילים' : 'מכירות בחודש'}</span>
-                <${Stepper} label=${p.name} value=${n} onChange=${(v) => setN(p.id, v)} />
-                <b class="w-[92px] text-end font-display tabular-nums">${fmt(n * netPrice(s, p))}</b>
-              </li>`;
-            })}
-          </ul>
-          ${((monthly && (mix[monthly.id] || 0) > 0) || (program && (mix[program.id] || 0) > 0)) &&
-          html`<${How} class="mt-1">
-            ${monthly && (mix[monthly.id] || 0) > 0 && html`<p class="py-0.5">${mix[monthly.id] === 1 ? 'לקוח פעיל אחד' : `${mix[monthly.id]} לקוחות פעילים`} ב${monthly.short} = ${num(mix[monthly.id] / a.stayMonths, 1)} חדשים בחודש. הם נערמים: מי שהצטרף בחודש שעבר עדיין משלם, אז כל לקוח חדש מוסיף הכנסה לכמה חודשים.</p>`}
-            ${program && (mix[program.id] || 0) > 0 && html`<p class="py-0.5">${program.short}: ${num(program.hours)} שעות מתחלקות על ${program.months} חודשים, והתשלום לפי מה שבחרת בחלק 2.</p>`}
-          <//>`}
-        <//>
-
-        <${Section} title="מאיפה יגיעו הלקוחות" sub="מהיעד אחורה: כמה פניות צריכות להגיע אליך בכל חודש, כדי שמספיק מהן יהפכו ללקוחות.">
-          <${Funnel} st=${st} a=${a} wk=${wk} />
-          <div class="mt-3">
-          <${How}>
-            <p class="mb-1">
-              כדי לקבל <b>${num(st.newClients, 1)} לקוחות חדשים</b> בחודש, כש-${a.closeRate}% מהשיחות נגמרות בקנייה, צריך <b>${num(st.calls, st.calls < 10 ? 1 : 0)} שיחות מכירה</b>.
-              כש-${a.leadToCall}% מהפניות קובעות שיחה, צריך שיגיעו אליך <b>${num(st.leads)} פניות</b> בחודש.
-              ${avg ? html` היום מגיעים בממוצע ${clientsText(avg.clients)} חדשים בחודש.` : ''}
-            </p>
-            <${CalcLines}
-            lines=${[
-              ['לקוחות חדשים בחודש מלא', num(st.newClients, 1)],
-              [`÷ ${a.closeRate}% מהשיחות קונות`, `${num(st.calls, 1)} שיחות`, true],
-              [`÷ ${a.leadToCall}% מהפניות קובעות שיחה`, `${num(st.leads, 1)} פניות`, true],
-            ]}
-            note=${`לקוחות חדשים = מכירות בחודש${monthly && (mix[monthly.id] || 0) > 0 ? `, ובמנוי: לקוחות פעילים ÷ ${a.stayMonths} חודשים שלקוח נשאר בממוצע` : ''}. השבוע = החודש × 12 ÷ 52.`}
-          /><//>
-          <${How} label="מה זה פנייה?" icon="circle-help">
-            <p>פנייה (ליד) = מי שהשאיר פרטים, שלח הודעה או ביקש לשמוע עוד. איך מביאים את הפניות: על זה עובדים בפרקים הבאים, בדף הנחיתה, במכונת התוכן ובלקוחות המשלמים.</p>
-          <//>
-          </div>
-        <//>
-        <${Assumptions} s=${s} up=${up} />
-      </div>
-
-      <aside class="fb-panel !p-4 lg:sticky lg:top-4">
-        <h2 class="fb-h3">חודש מלא, עם התמהיל הזה</h2>
-        <p class="mb-3 text-[13px] text-muted">חודש שבו נמכר כל מה שבחרת כאן.</p>
-        <div class=${cx('rounded-xl p-3', left >= s.goal ? 'bg-money-50' : 'bg-error-50')}>
-          <p class="text-[13px] font-bold text-muted">נשאר לך בחודש</p>
-          <p class=${cx('font-display text-[28px] font-black leading-tight tabular-nums', left >= s.goal ? 'text-money' : 'text-error')}>${fmt(left)}</p>
-          <p class="text-[14px] font-semibold">${left >= s.goal ? `היעד ${fmt(s.goal)}: מגיעים אליו${left > s.goal ? `, ועוד ${fmt(left - s.goal)}` : ''}` : `היעד ${fmt(s.goal)}: חסרים ${fmt(s.goal - left)}`}</p>
-        </div>
-        <p class="mb-1 mt-4 text-[13px] font-bold text-muted">איך מגיעים לזה</p>
-        <ul class="text-[14px]">
-          <li class="flex justify-between py-1 font-bold"><span>נכנס מהמכירות</span><span class="tabular-nums">${fmt(st.income)}</span></li>
-          ${[
-            ['עלויות המוצרים', st.cogs],
-            ['הוצאות קבועות', st.fixedBase],
-            st.fixedGrow > 0 && ['עלייה בפרסום ובכלים', st.fixedGrow],
-            [`מס וביטוח לאומי (${taxPctOf(s)}%)`, st.tax],
-            st.setAside > 0 && ['לכרית הביטחון', st.setAside],
-          ]
-            .filter(Boolean)
-            .map(([k, v]) => html`<li key=${k} class="flex justify-between py-1"><span>פחות ${k}</span><span class="tabular-nums text-muted">−${fmt(v)}</span></li>`)}
-          <li class="mt-1 flex justify-between border-t border-line pt-2 font-bold"><span>נשאר לך</span><span class="tabular-nums">${fmt(left)}</span></li>
-        </ul>
-        ${isLicensed(s) && html`<p class="mt-1 text-[12px] text-muted">בלי המע"מ (${fmt(st.vat)}): הוא עובר למדינה.</p>`}
-        <div class="mt-4 border-t border-line pt-3">
-          <${Bar} limit label="שעות עבודה בחודש" value=${st.hours} max=${a.hoursMonth} sub=${`${num(st.hours)} מתוך ${num(a.hoursMonth)} שיש לך`} />
-          <p class="text-[13px] text-muted">${num(st.work)} עם לקוחות + ${num(st.callH, 1)} בשיחות מכירה.</p>
-        </div>
-      </aside>
-    </div>
+    <${Needs} s=${s} up=${up} st=${st} />
+    <${TaxNote} s=${s} notify=${notify} />
+    <${Assumptions} s=${s} up=${up} />
   </div>`;
 }
 
-// ---------- part 5: the forecast, the checks, the fixes ----------
+// ---------- part 4: the forecast, the checks, the fixes ----------
 
 const TONE = {
   ok: { ring: 'border-money/30 bg-money-50', text: 'text-money', icon: 'circle-check' },
@@ -402,7 +170,7 @@ const TONE = {
 };
 const Dot = ({ tone }) => html`<span class=${cx('inline-block h-2.5 w-2.5 rounded-full', { ok: 'bg-money', warn: 'bg-warn', bad: 'bg-error', info: 'bg-faint' }[tone])}></span>`;
 
-function Checks({ list, how = true }) {
+function Checks({ list, how = true, brief }) {
   return html`<div class="grid gap-3 sm:grid-cols-2">
     ${list.map((c) => {
       const t = TONE[c.tone];
@@ -411,7 +179,7 @@ function Checks({ list, how = true }) {
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-bold text-muted">${c.q}</p>
           <p class="font-display text-[17px] font-extrabold">${c.a}</p>
-          <p class="text-[13px]">${c.sub}</p>
+          ${!brief && html`<p class="text-[13px]">${c.sub}</p>`}
           ${how &&
           c.how &&
           html`<details class="mt-1.5">
@@ -426,28 +194,6 @@ function Checks({ list, how = true }) {
       </div>`;
     })}
   </div>`;
-}
-
-// What the verdict rests on, in plain words, and what it does not check.
-function Basis({ s, m }) {
-  const a = s.assumptions;
-  const items = [
-    ['user', 'המספרים שלך', `הכסף בעסק, ההוצאות, המחירים, העלויות והשעות מחלקים 1-2, והיעד של ${fmt(s.goal)} בחודש מחלק 3.`],
-    ['shopping-basket', 'התמהיל', `כמה מכל מוצר נמכר בחודש מלא (חלק 4). בחודש מלא העסק מכניס ${fmt(m.st.income)}.`],
-    ['percent', 'שני אחוזים שאפשר לשנות', `${a.leadToCall}% מהפניות קובעות שיחה, ${a.closeRate}% מהשיחות קונות. ממוצע בתחום, עד שיהיו לך נתונים משלך (חלק 4).`],
-    ['trending-up', 'הדרך ליעד', `התסריט הריאלי: קצב שמתחיל ב-${paceOf(s, 'real').start}% ומאט בכל חודש, עם חודשים חלשים בחגים ובקיץ. ${m.fc.ramp != null && m.fc.ramp <= 12 ? `תוך ${m.fc.ramp} חודשים מגיעים לחודש מלא` : 'מגיעים לחודש מלא רק אחרי יותר משנה'}. את המשוואה אפשר לערוך (למעלה).`],
-  ];
-  return html`<details class="fb-panel mb-5 !p-4">
-    <summary class="cursor-pointer text-[16px] font-bold">על מה הבדיקה מבוססת</summary>
-    <p class="mb-3 mt-1 text-[14px] text-muted">אין כאן ניחוש: כל מספר מחושב מהנתונים האלה, באותו חישוב בכל פעם. הבדיקות לפי התסריט הריאלי.</p>
-    <ul class="grid gap-3 md:grid-cols-2">
-      ${items.map(([icon, k, v]) => html`<li key=${k} class="flex items-start gap-3"><span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${icon} size=${17} /></span><span class="text-[14px]"><b class="block text-[15px]">${k}</b>${v}</span></li>`)}
-    </ul>
-    <div class="mt-4 grid gap-3 border-t border-line pt-4 md:grid-cols-2">
-      <p class="text-[14px]"><b class="block text-[15px]">איך נקבעת השורה התחתונה</b>אדום באחת משלוש הבדיקות הראשונות: "יש בעיה במודל". כתום באחת מהן, או שהדרך לחודש מלא לוקחת יותר משנה: "אפשרי, עם שינוי". הכל ירוק: "המודל עובד".</p>
-      <p class="text-[14px]"><b class="block text-[15px]">מה הבדיקה לא יודעת</b>אם הפניות באמת יגיעו. היא בודקת שהמספרים מסתדרים אם הן מגיעות. להביא אותן זה השיווק, ועליו עובדים בפרקים הבאים.</p>
-    </div>
-  </details>`;
 }
 
 function Verdict({ v, scen }) {
@@ -498,11 +244,6 @@ function FixCard({ fx, pick, base, scen, onApply, onEdit }) {
           <span class="flex items-center justify-between gap-2 text-[12px] text-muted">${pick ? 'התוכנית מתעדכנת עם כל שינוי.' : 'רואים למטה מה זה עושה, לפני שמוסיפים.'}<button type="button" class="font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setOpen(false)}>סגירה</button></span>
         </div>`
       : html`<button type="button" class="inline-flex items-center gap-1 self-start text-[13px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => setOpen(true)}><${Icon} name="pencil" size=${13} />לשנות את המספר</button>`)}
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-3 py-2 text-[13px]">
-      ${fx.before.checks.map(
-        (c, i) => html`<span key=${c.id} class="inline-flex items-center gap-1" title=${c.q}><${Dot} tone=${c.tone} /><${Icon} name="arrow-left" size=${12} class="text-faint" /><${Dot} tone=${after.checks[i].tone} /><span class="text-muted">${c.q.replace('?', '')}</span></span>`,
-      )}
-    </div>
     <p class="text-[13px]">השינוי הזה לבד: <b class=${TONE[after.verdict.tone].text}>${after.verdict.title}</b> · נשאר בחודש מלא ${fmt(after.st.profit - after.st.setAside)}</p>
     ${pick
       ? html`<button type="button" aria-pressed="true" class="inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg bg-brand-600 px-3 py-1.5 text-[13px] font-bold text-white hover:bg-brand-700 cursor-pointer" onClick=${() => { setDraft(null); onApply(d); }}><${Icon} name="check" size=${14} />נבחר · לבטל</button>`
@@ -591,7 +332,7 @@ function Equation({ s, up, fc, notify }) {
   return html`<div class="mb-3">
     <button type="button" aria-expanded=${open} class=${cx('flex w-full items-center gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-start transition cursor-pointer', open ? 'border-brand-600 bg-brand-50' : 'border-brand-300 bg-white hover:border-brand-600')} onClick=${() => setOpen(!open)}>
       <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name="sigma" size=${18} /></span>
-      <span class="min-w-0 flex-1"><b class="block text-[15px] text-brand-600">המשוואה של התסריט ה${SCEN[key].label}</b><small class="text-[13px] text-muted">${edited ? 'ערכת אותה · ' : ''}איך נבנית השנה, ואפשר לשנות כל מספר</small></span>
+      <span class="min-w-0 flex-1"><b class="block text-[15px] text-brand-600">איך נבנתה התחזית</b><small class="text-[13px] text-muted">${edited ? 'ערכת אותה · ' : ''}המשוואה של התסריט ה${SCEN[key].label}. אפשר לשנות כל מספר</small></span>
       <${Icon} name=${open ? 'chevron-up' : 'chevron-down'} size=${20} class="shrink-0 text-brand-600" />
     </button>
     ${open && html`<div class="rise mt-2 rounded-xl border border-line bg-canvas p-3">
@@ -613,26 +354,11 @@ function Equation({ s, up, fc, notify }) {
   </div>`;
 }
 
-// The why of one scenario, under "איך זה חושב": the full month and the month-by-month level.
-function ScenarioHow({ fc }) {
-  const p = fc.plan;
-  const lines = fc.rows.slice(0, Math.min(12, (fc.ramp || 12) + 1)).map((r, i) => [
-    `${monthName(r.key)}${weakIn([r]).length ? ' (חודש חלש)' : ''}`,
-    `${clientsText(Math.round(p.need * r.f * 10) / 10)} · ${num(r.f * 100)}%`,
-    i === fc.reachIdx,
-  ]);
-  return html`<${How} class="mb-2">
-    <p class="mb-1">יעד ההכנסה = חודש מלא עם כל התמהיל, ${fmt(fc.st.income)} בחודש. בחודש מלא צריך ${clientsText(p.need)} חדשים.</p>
-    <p class="mb-1">${p.fresh ? 'מתחילים מלקוח ראשון' : `היום מגיעים ${clientsText(p.from)} חדשים בחודש`}, וכל חודש מחושב מהחודש שלפניו לפי המשוואה. האחוז = כמה מהחודש המלא נמכר.</p>
-    <${CalcLines} lines=${lines} note=${inYear(fc) ? `החודש המודגש: הראשון שמגיע לחודש מלא.` : `בשנה הזאת לא מגיעים לחודש מלא${fc.ramp ? `. לפי המשוואה זה קורה אחרי ${inMonths(fc.ramp)}` : ''}.`} />
-  <//>`;
-}
-
 export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onEditPick, onClearPicks }) {
   const [table, setTable] = useState(false);
   const [chat, setChat] = useState(false);
   const [scen, setScen] = useState('real');
-  // Everything in part 5 follows the chosen scenario: the verdict, the checks and the fixes.
+  // Everything in part 4 follows the chosen scenario: the verdict, the checks and the fixes.
   const ms = { real: m, low: model(s, 'low'), high: model(s, 'high') };
   const all = { real: m.fc, low: ms.low.fc, high: ms.high.fc };
   const fc = all[scen];
@@ -642,18 +368,17 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onEditPick, 
   const base = s.fixBase ? withPicks(s, s.fixBase, []) : s;
   const list = fixes(base, scen);
   const baseVerdict = picks.length ? model(base, scen).verdict : null;
-  const ceiling = m.fc.ceilingMonth != null ? m.fc.rows[m.fc.ceilingMonth] : null;
   const yearOk = fc.yearProfit >= fc.annualGoal;
   const reach = fc.reachIdx >= 0 ? fc.rows[fc.reachIdx] : null;
   const low = fc.minRow;
   const cashOk = low.cash >= 0;
-  return html`<div class="mx-auto max-w-[1120px] px-4 py-6 md:px-8">
-    <${StepHeading} n="5" eyebrow=${`חלק 5 מתוך 5 · ${PARTS[4]}`} title=${['השנה ', 'הקרובה', ' במספרים']} sub="תחזית לשנים-עשר החודשים הבאים, ובדיקה אם המודל מחזיק." />
+  return html`<div class="mx-auto max-w-[1000px] px-4 py-6 md:px-8">
+    <${StepHeading} n="5" eyebrow=${`חלק 4 מתוך ${PARTS.length} · ${PARTS[3]}`} title=${['השנה ', 'הקרובה', ' במספרים']} sub="מתי מגיעים לחודש מלא, והאם המודל מחזיק." />
 
     <${Verdict} v=${mk.verdict} scen=${scen} />
 
     <${Section}
-      title="מתי מגיעים ליעד ההכנסה?"
+      title="מתי מגיעים לחודש מלא?"
       aside=${html`<div role="tablist" aria-label="תצוגה" class="flex shrink-0 rounded-xl border border-line bg-canvas p-0.5">
         ${[
           [false, 'גרף', 'chart-column'],
@@ -662,46 +387,41 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onEditPick, 
       </div>`}
     >
       <${ScenarioTabs} s=${s} all=${all} value=${scen} onChange=${setScen} />
-      <p class="mb-2 text-[14px] text-muted">${SCEN[scen].line}</p>
-      <${Equation} s=${s} up=${up} fc=${fc} notify=${notify} />
-      <p class="mt-1 font-display text-[24px] font-black leading-tight">${reach ? html`תוך ${inMonths(fc.ramp)}<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : html`לא בשנה הקרובה<span class="text-[17px] font-bold text-muted"> · ${fc.ramp ? `בערך ${inMonths(fc.ramp)}` : 'בקצב הזה לא מגיעים'}</span>`}</p>
-      <${ScenarioHow} fc=${fc} />
+      <p class="mb-3 font-display text-[24px] font-black leading-tight">${reach ? html`תוך ${inMonths(fc.ramp)}<span class="text-[17px] font-bold text-muted"> · ב${monthYear(reach.key)}</span>` : html`לא בשנה הקרובה<span class="text-[17px] font-bold text-muted"> · ${fc.ramp ? `בערך ${inMonths(fc.ramp)}` : 'בקצב הזה לא מגיעים'}</span>`}</p>
       ${table ? html`<${ForecastTable} fc=${fc} goal=${s.goal} />` : html`<${ForecastChart} fc=${fc} goal=${s.goal} /><div class="mt-2"><${ForecastLegend} cushion=${fc.cushion} /></div>`}
       <div class="mt-4 grid gap-2 sm:grid-cols-2">
-        <p class=${cx('rounded-xl p-3 text-[15px]', yearOk ? 'bg-money-50' : 'bg-warn-50')}><span class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</span><b class="font-display text-[20px] tabular-nums">${fmt(fc.yearProfit)}</b> <span class="text-[14px]">מול יעד של ${fmt(fc.annualGoal)}:</span> <b class=${cx('text-[14px]', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? `${fmt(fc.yearProfit - fc.annualGoal)} מעל` : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)}`}</b>${!yearOk && fc.goalIdx >= 0 ? html`<span class="mt-1 block text-[13px] text-muted">החודשים עד ${monthName(fc.rows[fc.goalIdx].key)} הם הדרך לחודש מלא. משם היעד נשאר לך בכל חודש.</span>` : ''}</p>
-        <p class=${cx('rounded-xl p-3 text-[15px]', cashOk ? 'bg-money-50' : 'bg-error-50')}><span class="block text-[13px] font-bold text-muted">הכסף בעסק, בנקודה הכי נמוכה</span><b class=${cx('font-display text-[20px] tabular-nums', !cashOk && 'text-error')}>${fmt(low.cash)}</b> <span class="text-[14px]">ב${monthYear(low.key)}${cashOk ? ', לא נכנסים למינוס' : ', העסק במינוס'}</span></p>
+        <div class=${cx('rounded-xl p-3', yearOk ? 'bg-money-50' : 'bg-warn-50')}>
+          <small class="block text-[13px] font-bold text-muted">יישאר לך בשנה הקרובה</small>
+          <b class="font-display text-[22px] tabular-nums">${fmt(fc.yearProfit)}</b>
+          <span class=${cx('ms-1 text-[14px] font-bold', yearOk ? 'text-money' : 'text-warn')}>${yearOk ? 'מעל היעד' : `חסרים ${fmt(fc.annualGoal - fc.yearProfit)} ליעד`}</span>
+        </div>
+        <div class=${cx('rounded-xl p-3', cashOk ? 'bg-money-50' : 'bg-error-50')}>
+          <small class="block text-[13px] font-bold text-muted">הכסף בעסק, בנקודה הכי נמוכה</small>
+          <b class=${cx('font-display text-[22px] tabular-nums', !cashOk && 'text-error')}>${fmt(low.cash)}</b>
+          <span class="ms-1 text-[14px]">ב${monthYear(low.key)}</span>
+        </div>
       </div>
-      <${How} class="mt-1"><${CalcLines}
-        lines=${[
-          ['מה שנשאר בכל חודש, 12 חודשים ביחד', fmt(fc.yearProfit), true],
-          [`היעד: ${fmt(s.goal)} × 12`, fmt(fc.annualGoal)],
-          [yearOk ? 'מעל היעד' : 'חסר ליעד', fmt(Math.abs(fc.yearProfit - fc.annualGoal)), true],
-        ]}
-        note="בכל חודש: הכנסות, פחות הוצאות קבועות (פרסום וכלים עולים יחד עם העסק), עלויות המוצרים ומס. כולל החודשים עד שמגיעים ליעד, שבהם המכירות עוד גדלות ונשאר פחות."
-      /><//>
-      ${s.stage === 'active' && html`<details class="mt-3"><summary class="cursor-pointer text-[14px] font-bold text-brand-600">לפי רבעונים</summary><div class="mt-2"><${Quarters} fc=${fc} /></div></details>`}
+      <p class="mt-2 text-[13px] text-muted">לפני מס. ${SCEN[scen].line}</p>
+      <div class="mt-3"><${Equation} s=${s} up=${up} fc=${fc} notify=${notify} /></div>
     <//>
-    ${ceiling &&
-    html`<p class="mb-5 flex items-start gap-2 rounded-xl border border-brand-300 bg-brand-50 p-3 text-[15px]"><${Icon} name="info" size=${19} class="mt-0.5 shrink-0 text-brand-600" /><span><b>כדאי לדעת, תקרת עוסק פטור:</b> בקצב הזה, ב${monthYear(ceiling.key)} ההכנסות עוברות ${fmt(SETTINGS.exemptCeiling)} ב-12 חודשים. עד אז נשארים עוסק פטור, ומשם עוברים לעוסק מורשה: ${SETTINGS.vatPct}% מכל מחיר יעברו למע"מ${overCeiling(s) ? `, ובחודש מלא יישארו לך ${fmt(asLicensed(s).left)} במקום ${fmt(m.st.profit - m.st.setAside)}` : ''}. כדאי לתאם עם רואה החשבון לקראת המעבר.</span></p>`}
 
-    <${Section} title="הבדיקות" sub=${`לפי התסריט ${SCEN_NAME[scen]}. כשמחליפים תסריט למעלה, הבדיקות מתעדכנות.`}><${Checks} list=${mk.checks} /><//>
+    <${Section} title="הבדיקות"><${Checks} list=${mk.checks} brief /><//>
 
     ${list.length > 0 &&
-    html`<${Section} title="מה אפשר לשנות" sub=${`הכריש מציע, ${g('אתה בוחר', 'את בוחרת')}: אפשר לבחור כמה שינויים יחד, לשנות את המספר בכל אחד, ולבטל. מסודר לפי מה שמשפיע הכי הרבה בתסריט ${SCEN_NAME[scen]}.`}>
+    html`<${Section} title="מה אפשר לשנות" sub=${`הכריש מציע, ${g('אתה בוחר', 'את בוחרת')}. אפשר לבחור כמה, ולבטל.`}>
       ${picks.length > 0 &&
       html`<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 p-3 text-[14px]">
-        <p>${picks.length === 1 ? 'בחרת שינוי אחד' : `בחרת ${picks.length} שינויים`}. לפני: <b class=${TONE[baseVerdict.tone].text}>${baseVerdict.title}</b> · עכשיו: <b class=${TONE[mk.verdict.tone].text}>${mk.verdict.title}</b> · נשאר בחודש מלא ${fmt(mk.st.profit - mk.st.setAside)}</p>
-        <button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${onClearPicks}>לבטל את כל השינויים</button>
+        <p>לפני: <b class=${TONE[baseVerdict.tone].text}>${baseVerdict.title}</b> · עכשיו: <b class=${TONE[mk.verdict.tone].text}>${mk.verdict.title}</b></p>
+        <button type="button" class="text-[13px] font-bold text-muted underline underline-offset-2 cursor-pointer" onClick=${onClearPicks}>לבטל הכל</button>
       </div>`}
-      <ul class=${cx('grid gap-3', list.length === 4 ? 'md:grid-cols-2' : 'md:grid-cols-3')}>${list.map((fx) => html`<${FixCard} key=${fx.id + scen} fx=${fx} pick=${picks.find((p) => p.id === fx.d.id)} base=${base} scen=${scen} onApply=${(d) => onApply(fx, d)} onEdit=${onEditPick} />`)}</ul>
+      <ul class="grid gap-3 md:grid-cols-2">${list.map((fx) => html`<${FixCard} key=${fx.id + scen} fx=${fx} pick=${picks.find((p) => p.id === fx.d.id)} base=${base} scen=${scen} onApply=${(d) => onApply(fx, d)} onEdit=${onEditPick} />`)}</ul>
     <//>`}
-    <${Basis} s=${s} m=${m} />
     <div class="flex flex-wrap items-center gap-3">
       <${Button} variant="secondary" onClick=${() => setChat(true)}><${SharkAvatar} size=${26} />לדבר על זה עם הכריש<//>
-      ${mk.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה. התוכנית תראה מה עוד לא מסתדר.</p>`}
+      ${mk.verdict.tone !== 'ok' && html`<p class="text-[14px] text-muted">אפשר לסיים את השלב גם ככה.</p>`}
     </div>
     ${chat && html`<${SharkChat} m=${m} onClose=${() => setChat(false)} />`}
   </div>`;
 }
 
-export { Quarters, Checks, Verdict, Dot, TONE };
+export { Checks, Verdict, Dot, TONE };

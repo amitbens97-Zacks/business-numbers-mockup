@@ -567,7 +567,7 @@ function Cushion({ s, up }) {
     <div class="pb-6">
       <div class="mb-1 flex justify-between text-[13px] font-bold"><span>בעסק היום ${fmt(have)}</span><span class="text-muted">מתוך ${fmt(target)}</span></div>
       <div class="h-3 overflow-hidden rounded-full bg-[#e3ddd0]"><div class="h-full rounded-full bg-warn" style=${{ width: `${Math.min(100, (have / (target || 1)) * 100)}%` }}></div></div>
-      <p class="mt-1 text-[13px] text-muted">${have >= target ? 'הכרית מלאה.' : `חסרים ${fmt(target - have)}. בחלק 3 נקבע תוך כמה זמן ממלאים אותה.`}</p>
+      <p class="mt-1 text-[13px] text-muted">${have >= target ? 'הכרית מלאה.' : `חסרים ${fmt(target - have)}. ממלאים אותה בהדרגה, תוך חצי שנה.`}</p>
     </div>
   </div>`;
 }
@@ -741,7 +741,7 @@ function Summary({ s, up }) {
     html`<div class=${cx('mt-3 rounded-xl p-3', avg.left < 0 ? 'bg-warn-50' : 'bg-brand-50')}>
       <p class="text-[13px] font-bold text-muted">בחודש ממוצע היום נשארים</p>
       <p class=${cx('font-display text-[26px] font-black leading-tight tabular-nums', avg.left < 0 ? 'text-warn' : 'text-brand-600')}>${fmt(avg.left)}</p>
-      <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['פחות מס וביטוח לאומי (על מה שנשאר)', fmt(-avg.tax)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
+      <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
     </div>`}
     ${showRw &&
     html`<div class=${cx('mt-3 rounded-xl p-3', rw.months < 3 ? 'bg-warn-50' : 'bg-canvas')}>
@@ -797,7 +797,7 @@ export function TodayScreen({ s, up, onStage }) {
     if (!after) setTimeout(() => document.getElementById('today-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
   return html`<div class="mx-auto max-w-[1180px] px-4 py-6 md:px-8">
-    <${StepHeading} n="5" eyebrow=${`חלק 1 מתוך 5 · ${PARTS[0]} · ${st.board}`} title=${s.stage === 'setup' ? ['כמה כסף יש ', 'להקמה', '?'] : ['איך נראה ', 'חודש', ' היום?']} sub=${s.stage === 'setup' ? `${secs.length} שאלות קצרות. עוד אין הכנסה, אז נבדוק כמה זמן הכסף מחזיק.` : `${secs.length} שאלות קצרות. ממה שכבר קרה נבנה את נקודת ההתחלה של התחזית.`}>
+    <${StepHeading} n="5" eyebrow=${`חלק 1 מתוך ${PARTS.length} · ${PARTS[0]} · ${st.board}`} title=${s.stage === 'setup' ? ['כמה כסף יש ', 'להקמה', '?'] : ['איך נראה ', 'חודש', ' היום?']} sub=${s.stage === 'setup' ? `${secs.length} שאלות קצרות. עוד אין הכנסה, אז נבדוק כמה זמן הכסף מחזיק.` : `${secs.length} שאלות קצרות. ממה שכבר קרה נבנה את נקודת ההתחלה של התחזית.`}>
       <button type="button" class="mt-1 inline-flex items-center gap-1.5 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${onStage} title="לשנות את מצב העסק"><${Icon} name=${st.icon} size=${15} />${st.label}</button>
     <//>
     <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_260px] xl:grid-cols-[minmax(0,1fr)_300px]">

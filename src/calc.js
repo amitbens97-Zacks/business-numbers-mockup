@@ -219,7 +219,9 @@ export function taxAtGoal(s) {
   const r = taxOn(s, hi);
   return { ...r, want, rate: hi > 0 ? r.total / hi : 0 };
 }
-export const taxRate = (s) => (s.taxManual ? (s.taxPct ?? 0) / 100 : taxAtGoal(s).rate);
+// The step works before tax (Amit, 11.11): the rate is 0 everywhere. The calculator above
+// stays for the accountant chapter, where the user does the tax with the accountant.
+export const taxRate = () => 0;
 // The rate as the user sees it, one decimal.
 export const taxPctOf = (s) => Math.round(taxRate(s) * 1000) / 10;
 
@@ -513,7 +515,6 @@ export function checks(s, mix, fc) {
     ['פחות עלויות המוצרים', fmt(-st.cogs)],
     ['פחות הוצאות קבועות', fmt(-st.fixedBase)],
     st.fixedGrow > 0 && [`פחות העלייה בפרסום ובכלים כשהעסק גדל (${paceOf(s, fc.key).cost}%)`, fmt(-st.fixedGrow)],
-    [`פחות מס וביטוח לאומי (${taxPctOf(s)}% מהרווח)`, fmt(-st.tax)],
     st.setAside > 0 && ['פחות לכרית הביטחון', fmt(-st.setAside)],
     ['נשאר לך', fmt(st.profit - st.setAside), true],
     ['היעד', fmt(goal)],
@@ -560,7 +561,7 @@ export function checks(s, mix, fc) {
       ['בעסק היום', fmt(fc.startCash)],
       setupLeft > 0 && ['פחות מה שנשאר לשלם על ההקמה', fmt(-setupLeft)],
       [`נכנס מלקוחות עד ${monthName(low.key)}`, fmt(sum('income'))],
-      ['פחות הוצאות, עלויות המוצרים ומס', fmt(-(sum('fixed') + sum('cogs') + sum('tax')))],
+      ['פחות הוצאות ועלויות המוצרים', fmt(-(sum('fixed') + sum('cogs')))],
       ['פחות מה שיוצא אליך (עד גובה היעד)', fmt(-sum('draw'))],
       [`בעסק ב${monthName(low.key)}, הנקודה הכי נמוכה`, fmt(low.cash), true],
     ].filter(Boolean),
@@ -581,7 +582,7 @@ export function checks(s, mix, fc) {
         [`${s.assumptions.leadToCall}% מהן קובעות שיחה`, `${num(st.calls, 1)} שיחות`],
         [`${s.assumptions.closeRate}% מהשיחות קונות`, `${num(st.newClients, 1)} לקוחות`, true],
       ],
-      rule: 'בלי לקוחות עדיין זו בדיקה למידע בלבד, היא לא משנה את השורה התחתונה. מחלק 4: כמה פניות צריך כדי שזה יקרה.',
+      rule: 'בלי לקוחות עדיין זו בדיקה למידע בלבד, היא לא משנה את השורה התחתונה. מחלק 3: כמה פניות צריך כדי שזה יקרה.',
     });
   } else {
     const ratio = st.newClients / today.clients;

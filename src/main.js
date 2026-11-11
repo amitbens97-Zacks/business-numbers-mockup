@@ -1,16 +1,16 @@
 // Task 6: step 5 "העסק במספרים" (chapter 2, the last free step). It merges the old
 // "תקציב הקמה" and "תחזית פיננסית" steps and adapts to where the business stands.
 // There is no frame around the product: it opens on step 5, as a user reaches it.
-// Link params: ?view=step|home, ?screen=opening|stage|today|prices|goal|sell|forecast|doc|done,
+// Link params: ?view=step|home, ?screen=opening|stage|today|prices|sell|forecast|doc|done,
 // ?scenario=setup|first|active|skipped, ?user=f, ?embed = phone layout.
 // Shift+D opens the developer notes, the scenarios and the screen list.
 import { html, render, useState, useEffect, useRef, Icon, cx } from './lib.js';
 import { Logo, PartnerBubble, Progress, TopBar, BottomBar, Status, PrimaryButton, Button, Toast } from './components.js';
 import { STEP, PARTS, STEP_SCREENS, SCENARIOS, DEFAULT_SCENARIO, HISTORY_FIRST, g } from './data.js';
-import { model, missingOf, paidProducts, todayText, taxPctOf, fixBaseOf, withPicks } from './calc.js';
+import { model, missingOf, paidProducts, todayText, fixBaseOf, withPicks } from './calc.js';
 import { Opening, StageScreen, PricesScreen } from './parts.js';
 import { TodayScreen, ALL_SECTIONS, historyMissing } from './today.js';
-import { GoalScreen, SellScreen, ForecastScreen } from './plan.js';
+import { SellScreen, ForecastScreen } from './plan.js';
 import { DocScreen, Done, Home, Paywall, financeLink } from './finish.js';
 import { DevPanel } from './devnotes.js';
 import { EMBED, IS_PHONE, readView, saveView, writeHandoff, takeHandoff, applyPhoneViewport, ViewToggle, PhonePreview } from './viewswitch.js';
@@ -43,7 +43,8 @@ function fillTo(st, screen, scenarioId) {
 
 function startRoute() {
   if (params.get('view') === 'home') return { view: 'home' };
-  const sc = params.get('screen');
+  // The old goal part is now inside part 3 (old links keep working).
+  const sc = params.get('screen') === 'goal' ? 'sell' : params.get('screen');
   return { view: 'step', screen: SCREENS.includes(sc) ? sc : 'opening' };
 }
 
@@ -56,9 +57,8 @@ function sharkLine(screen, s, m) {
     today: s.stage === 'setup'
       ? 'הוספתי הצעות למה שיועצי שיווק צריכים בדרך כלל בהקמה, במחירי שוק. מה שלא רלוונטי, פשוט לא להוסיף.'
       : g('יש לך דוח רווח והפסד מרואה החשבון? אני אקרא אותו ואחסוך לך את ההקלדה.', 'יש לך דוח רווח והפסד מרואה החשבון? אני אקרא אותו ואחסוך לך את ההקלדה.'),
-    prices: g('שים לב לשורה "כמה אתה מרוויח על שעת עבודה". זה המספר שמחליט איזה מוצר כדאי למכור יותר.', 'שימי לב לשורה "כמה את מרוויחה על שעת עבודה". זה המספר שמחליט איזה מוצר כדאי למכור יותר.'),
-    goal: 'היעד הוא מה שנשאר לך, לא מה שנכנס. את הדרך מהיעד להכנסות אני מחשב בחלק הבא.',
-    sell: 'הצעתי תמהיל לפי הרווח לשעה ולפי השעות שיש לך. אפשר לשחק עם המספרים, והכל מתעדכן.',
+    prices: g('הבאתי את המוצרים מהסל שלך. אם חסר משהו אסמן אותו, וכל השאר כבר מוכן.', 'הבאתי את המוצרים מהסל שלך. אם חסר משהו אסמן אותו, וכל השאר כבר מוכן.'),
+    sell: 'הצעתי תמהיל שמגיע ליעד שלך, בשעות שיש לך. אפשר לשחק עם המספרים, והכל מתעדכן.',
     forecast: m.verdict.tone === 'ok' ? 'המודל עובד. מכאן זה עניין של ביצוע: להביא את הפניות, ולסגור.' : 'משהו לא מסתדר, ובשביל זה בדיוק בודקים עכשיו ולא אחרי שנה. בחרתי את השינויים שהכי משפיעים.',
     doc: 'זו התוכנית שלך. היא נשמרת, ואפשר לחזור ולעדכן אותה בכל פעם שהעסק משתנה.',
     home: 'פרק 2 מאחוריך. יש לך מספרים שעובדים, עכשיו בונים את המותג.',
@@ -82,8 +82,8 @@ function reasonOf(screen, s, m) {
     const miss = s.products.find((p) => !p.free && missingOf(p).length);
     if (miss) return `חסר ${missingOf(miss)[0]} ב${miss.short || miss.name}`;
   }
-  if (screen === 'goal' && !s.goal) return 'צריך יעד חודשי';
   if (screen === 'sell') {
+    if (!s.goal) return 'צריך יעד חודשי';
     if (!s.assumptions.hoursMonth) return 'צריך כמה שעות בשבוע יש לך';
     if (!Object.values(m.mix).some((n) => n > 0)) return 'צריך לפחות מכירה אחת בתמהיל';
   }
@@ -188,7 +188,7 @@ function App({ view: shellView, onViewChange }) {
       if (!['opening', 'stage'].includes(id) && !d.stage) d.stage = SCENARIOS.find((x) => x.id === scenario).stage;
       fillTo(d, id, scenario);
     });
-    setMaxPart(4);
+    setMaxPart(PARTS.length - 1);
     toScreen(id);
   };
   // Part 5: pick a fix, or take it back. The state is rebuilt from before the first pick.
@@ -287,7 +287,6 @@ function App({ view: shellView, onViewChange }) {
     stage: html`<${StageScreen} ...${props} onPicked=${onPicked} />`,
     today: html`<${TodayScreen} ...${props} />`,
     prices: html`<${PricesScreen} ...${props} />`,
-    goal: html`<${GoalScreen} ...${props} />`,
     sell: html`<${SellScreen} ...${props} />`,
     forecast: html`<${ForecastScreen} ...${props} onApply=${applyFix} onEditPick=${editPick} onClearPicks=${clearPicks} />`,
     doc: html`<${DocScreen} ...${props} />`,
@@ -310,7 +309,7 @@ function App({ view: shellView, onViewChange }) {
       : html`<${BottomBar}
           back=${screen !== 'opening' && html`<${Button} variant="secondary" onClick=${() => toScreen(prevScreen)}>חזרה<//>`}
           status=${html`<${Status} undo=${null} reason=${reason} save=${inParts ? save : null} hint=${screen === 'forecast' && m.verdict.tone !== 'ok' ? (m.verdict.tone === 'bad' ? 'אפשר לסיים גם עם בדיקה אדומה' : 'אפשר לסיים גם ככה') : null} />`}
-          primary=${html`<div class="flex items-center gap-3 max-md:flex-col max-md:items-stretch max-md:[&>button]:w-full">${screen === 'goal' && html`<span key=${taxPctOf(s)} class="rise inline-flex shrink-0 justify-center items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-[14px] font-bold text-brand-600" role="status" aria-live="polite"><${Icon} name="percent" size=${15} />מס וביטוח לאומי: <span class="font-display text-[17px] font-black tabular-nums">${taxPctOf(s)}%</span></span>`}<${PrimaryButton}
+          primary=${html`<div class="flex items-center gap-3 max-md:flex-col max-md:items-stretch max-md:[&>button]:w-full"><${PrimaryButton}
             label=${label}
             check=${screen === 'doc'}
             disabled=${!!reason}
