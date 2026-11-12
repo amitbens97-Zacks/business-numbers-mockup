@@ -151,7 +151,7 @@ export const SHARK_EXPENSES = [
 
 // One-time setup. What FlowBiz builds with the user (the name and logo, the messages page,
 // the landing page) is a suggestion like the rest: 0 ₪, with the market price in the note.
-// Added, it shows that price under "תכננת" and "חסכת עם FlowBiz", and never counts.
+// Added, it shows "תחסוך עם FlowBiz" with that market price, and never counts.
 // Amounts are kept realistic for someone starting alone, not a studio's price list.
 export const FLOWBIZ_SETUP = [
   { id: 'fb-logo', name: 'שם ולוגו', icon: 'palette', value: 1200, step: 6 },

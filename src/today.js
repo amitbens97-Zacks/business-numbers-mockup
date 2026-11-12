@@ -80,25 +80,29 @@ const Trash = ({ name, onClick }) => html`<button type="button" class="grid h-9 
 
 // ---------- the setup table (the finance center's "תקציב ההקמה") ----------
 
-const SETUP_COLS = 'md:grid-cols-[minmax(0,1fr)_112px_112px_104px_84px]';
+// Amit, 12.11: no "תכננת" column. The row is "שולם" and "נשאר לשלם", and both are edited
+// right there; the item's total (planned, kept in the data for the finance center) is
+// always שולם + נשאר לשלם. Paying more than was left just raises the total.
+const SETUP_COLS = 'md:grid-cols-[minmax(0,1fr)_120px_120px_84px]';
 
 function SetupRow({ x, set, remove, sw }) {
-  const over = (x.spent || 0) - (x.planned || 0);
   const left = itemLeft(x);
-  return html`<li class=${cx('grid grid-cols-4 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
-    <div class="col-span-4 flex min-w-0 items-center gap-2.5 md:col-span-1">
+  const setSpent = (v) => set({ spent: v, planned: Math.max(x.planned || 0, v || 0) });
+  const setLeft = (v) => set({ planned: (x.spent || 0) + (v || 0) });
+  return html`<li class=${cx('grid grid-cols-3 items-end gap-x-2 gap-y-2 border-t border-line py-3 md:items-center md:gap-x-3', SETUP_COLS)}>
+    <div class="col-span-3 flex min-w-0 items-center gap-2.5 md:col-span-1">
       <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${x.icon || 'package'} size=${17} /></span>
       <span class="min-w-0">
         <${InlineEdit} value=${x.name} placeholder="שם הפריט" onSave=${(v) => set({ name: v })} class=${cx('min-w-0 text-[15px] font-bold leading-tight', x.done && 'text-muted')} />
         ${!x.done && html`<${FbSwitch} sw=${sw} onSwitch=${(y) => set({ name: y.name, icon: y.icon || x.icon, planned: y.planned })} />`}
       </span>
-      ${over > 0 && html`<${Tag} tone="fix">חריגה ${fmt(over)}<//>`}
       <span class="flex-1"></span>
       <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
     </div>
-    ${cell('תכננת', html`<${NumEdit} value=${x.planned} label=${`תכננת ל${x.name || 'הפריט'}`} onSave=${(v) => set({ planned: v })} quiet class="text-[16px]" />`)}
-    ${cell('שולם', html`<${NumEdit} value=${x.spent || 0} label=${`שולם על ${x.name || 'הפריט'}`} onSave=${(v) => set({ spent: v })} quiet class=${cx('text-[16px]', over > 0 && '!text-error')} />`)}
-    ${cell('נשאר לשלם', html`<span class=${cx('font-display text-[16px] font-extrabold tabular-nums', left ? 'text-ink' : 'text-faint')}>${fmt(left)}</span>`)}
+    ${cell('שולם', html`<${NumEdit} value=${x.spent || 0} label=${`שולם על ${x.name || 'הפריט'}`} onSave=${setSpent} quiet class="text-[16px]" />`)}
+    ${cell('נשאר לשלם', x.done
+      ? html`<span class="font-display text-[16px] font-extrabold tabular-nums text-faint">${fmt(0)}</span>`
+      : html`<${NumEdit} value=${x.planned == null ? null : left} label=${`נשאר לשלם על ${x.name || 'הפריט'}`} onSave=${setLeft} quiet class="text-[16px]" />`)}
     <div class="flex items-center justify-end gap-1">
       <div class="flex flex-col items-center md:block"><span class="block text-[12px] font-bold text-muted md:hidden">שולם במלואו</span><button
         type="button"
@@ -115,18 +119,17 @@ function SetupRow({ x, set, remove, sw }) {
   </li>`;
 }
 
-// What FlowBiz builds, once the user added it: the market price in "תכננת", and "חסכת עם
-// FlowBiz" across the rest. Not counted.
+// What FlowBiz builds, once the user added it: "תחסוך עם FlowBiz" and the market price
+// across the row. Not counted.
 function SavedRow({ x, remove }) {
-  return html`<li class=${cx('grid grid-cols-4 items-center gap-x-2 gap-y-2 border-t border-line py-3 md:gap-x-3', SETUP_COLS)}>
-    <div class="col-span-4 flex min-w-0 items-center gap-2.5 md:col-span-1">
+  return html`<li class=${cx('grid grid-cols-3 items-center gap-x-2 gap-y-2 border-t border-line py-3 md:gap-x-3', SETUP_COLS)}>
+    <div class="col-span-3 flex min-w-0 items-center gap-2.5 md:col-span-1">
       <span class="fb-chip-ic h-9 w-9 shrink-0"><${Icon} name=${x.icon || 'package'} size=${17} /></span>
       <b class="min-w-0 text-[15px]">${x.name}</b>
       <span class="flex-1"></span>
       <span class="md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span>
     </div>
-    ${cell('תכננת', html`<span class="font-display text-[16px] font-extrabold tabular-nums">${fmt(x.value)}</span>`)}
-    <div class="col-span-3 flex items-center justify-between gap-2 md:col-span-3"><${Saved} /><span class="max-md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span></div>
+    <div class="col-span-3 flex items-center justify-between gap-2 md:col-span-3"><span><${Saved} /> <small class="text-[13px] text-muted">(בשוק ${fmt(x.value)})</small></span><span class="max-md:hidden"><${Trash} name=${x.name} onClick=${remove} /></span></div>
   </li>`;
 }
 
@@ -218,13 +221,12 @@ function SetupTable({ s, up }) {
     </div>`}
 
     <div class=${cx('mt-4 hidden pb-2 text-[12px] font-bold text-muted md:grid md:gap-x-3', SETUP_COLS)}>
-      <span>פריט</span><span>תכננת</span><span>שולם</span><span>נשאר לשלם</span><span class="text-end">שולם במלואו</span>
+      <span>פריט</span><span>שולם</span><span>נשאר לשלם</span><span class="text-end">שולם במלואו</span>
     </div>
     <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} sw=${fbSwitchOf(x.name, s, 'setup')} />`))}</ul>
     ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים. אפשר להוסיף פריט, או להתחיל מההצעות של הכריש.</p>`}
-    <div class=${cx('grid grid-cols-4 items-center gap-x-2 gap-y-1 border-t-2 border-ink/70 pt-3 md:gap-x-3', SETUP_COLS)}>
-      <b class="col-span-4 text-[15px] md:col-span-1">סך הכול בפריטים</b>
-      ${cell('תכננת', total(b.allocated))}
+    <div class=${cx('grid grid-cols-3 items-center gap-x-2 gap-y-1 border-t-2 border-ink/70 pt-3 md:gap-x-3', SETUP_COLS)}>
+      <b class="col-span-3 text-[15px] md:col-span-1">סך הכול בפריטים</b>
       ${cell('שולם', total(b.spent))}
       ${cell('נשאר לשלם', total(b.remaining))}
     </div>
@@ -617,7 +619,7 @@ export function sectionsOf(s) {
     },
     setup: {
       title: 'תקציב ההקמה',
-      sub: 'הוצאות חד-פעמיות כדי להתחיל: מה תכננת, מה כבר שילמת, ומה נשאר.',
+      sub: 'הוצאות חד-פעמיות כדי להתחיל: מה כבר שילמת, ומה נשאר לשלם.',
       ok: true,
       sum: s.setupBudget != null || s.setup.length ? `תקציב ${fmt(b.budget || b.final)} · נשאר לשלם ${fmt(b.remaining)}` : '',
       Body: SetupTable,
