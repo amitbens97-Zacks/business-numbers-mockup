@@ -22,7 +22,7 @@ const MIX_COLORS = ['#0038b8', '#4f86e8', '#f0a830', '#2f9e6b', '#a5c0f2', '#c24
 function TaxNote({ s, notify }) {
   return html`<div class="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-brand-300 bg-white px-4 py-3">
     <span class="fb-chip-ic h-10 w-10 shrink-0"><${Icon} name="landmark" size=${19} /></span>
-    <p class="min-w-[200px] flex-1 text-[15px]"><b>החישובים כאן לא כוללים מס.</b> <span class="text-muted">${overCeiling(s) ? 'ובהכנסה שהיעד דורש, גם עוברים את תקרת עוסק פטור. ' : ''}את המס מחשבים עם רואה החשבון שלנו, בפרק ראיית חשבון.</span></p>
+    <p class="min-w-[200px] flex-1 text-[15px]"><b>לפני מס.</b>${overCeiling(s) ? html` <span class="text-muted">ועוברים את תקרת עוסק פטור.</span>` : ''}</p>
     <${Button} variant="mini" onClick=${() => notify('במערכת: עוברים לעמוד ראיית חשבון. עושים מנוי, עוברים את השלבים, ובסוף שולחים את הפרטים לרואה החשבון, והוא יוצר קשר.', 'landmark')}>לחישוב המס עם רואה החשבון<${Icon} name="arrow-left" size=${15} /><//>
   </div>`;
 }
@@ -40,7 +40,7 @@ function Needs({ s, up, st }) {
     ['phone', 'שיחות מכירה בחודש', st.calls, `${per(st.calls)} בשבוע`],
     ['handshake', 'לקוחות חדשים בחודש', st.newClients, `${per(st.newClients)} בשבוע`],
   ];
-  return html`<${Section} title="מה זה אומר בפועל" sub="כדי למכור את התמהיל: פניות, שיחות ולקוחות בכל חודש, ושעות עבודה בכל שבוע.">
+  return html`<${Section} title="מה זה אומר בפועל">
     <div class="grid grid-cols-3 gap-2 sm:gap-3">
       ${tiles.map(([icon, label, n, sub]) => html`<div key=${label} class="flex flex-col items-center gap-0.5 rounded-xl bg-brand-50 px-2 py-3 text-center">
         <span class="text-brand-600"><${Icon} name=${icon} size=${20} /></span>
@@ -109,7 +109,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
 
     <${Section}
       title="התמהיל: מה מוכרים בחודש מלא"
-      sub="חודש מלא = חודש שבו מוכרים את כל מה שכאן. בתחזית נראה מתי מגיעים אליו."
+      sub="חודש מלא = מוכרים את כל מה שכאן."
       aside=${shark ? html`<${Tag} tone="blue"><img src="assets/shark/shark-happy-sm.svg" alt="" class="h-4 w-4 rounded-full bg-white" />ההצעה של הכריש<//>` : html`<button type="button" class="shrink-0 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${() => { const back = s; up((d) => (d.mix = null)); notify('חזרת להצעה של הכריש', 'rotate-ccw', () => undoTo(back)); }}>להחזיר להצעה של הכריש</button>`}
     >
       ${st.income > 0 && html`<div class="mb-1 flex h-4 overflow-hidden rounded-full bg-[#e3ddd0]" aria-hidden="true">
@@ -141,7 +141,7 @@ export function SellScreen({ s, up, m, notify, undoTo }) {
       </div>
       <p class=${cx('mt-2 flex items-center gap-1.5 text-[15px] font-bold', ok ? 'text-money' : 'text-error')}>
         <${Icon} name=${ok ? 'circle-check' : 'circle-alert'} size=${18} />
-        ${!goal ? 'צריך יעד, למעלה' : ok ? (left - goal >= 50 ? `מגיעים ליעד, ועוד ${fmt(left - goal)}` : 'מגיעים ליעד') : noRoom ? `חסרים ${fmt(goal - left)} ליעד, והשעות שלך מלאות. בתחזית הכריש יציע מה לשנות: מחיר, תמהיל או שעות.` : `חסרים ${fmt(goal - left)} ליעד. אפשר להוסיף מכירות`}
+        ${!goal ? 'צריך יעד, למעלה' : ok ? (left - goal >= 50 ? `מגיעים ליעד, ועוד ${fmt(left - goal)}` : 'מגיעים ליעד') : noRoom ? `חסרים ${fmt(goal - left)} ליעד, והשעות מלאות. בתחזית נראה מה לשנות.` : `חסרים ${fmt(goal - left)} ליעד. אפשר להוסיף מכירות`}
       </p>
       <${How} class="mt-1"><${CalcLines}
         lines=${[
@@ -403,14 +403,14 @@ export function ForecastScreen({ s, up, m, notify, undoTo, onApply, onEditPick, 
           <span class="ms-1 text-[14px]">ב${monthYear(low.key)}</span>
         </div>
       </div>
-      <p class="mt-2 text-[13px] text-muted">לפני מס. ${SCEN[scen].line}</p>
+      <div class="mt-2 flex flex-wrap items-center gap-x-3 text-[13px] text-muted"><span>לפני מס.</span><${How} label=${`מה מניח התסריט ה${SCEN[scen].label}`} icon="info">${SCEN[scen].line}<//></div>
       <div class="mt-3"><${Equation} s=${s} up=${up} fc=${fc} notify=${notify} /></div>
     <//>
 
     <${Section} title="הבדיקות"><${Checks} list=${mk.checks} brief /><//>
 
     ${list.length > 0 &&
-    html`<${Section} title="מה אפשר לשנות" sub=${`הכריש מציע, ${g('אתה בוחר', 'את בוחרת')}. אפשר לבחור כמה, ולבטל.`}>
+    html`<${Section} title="מה אפשר לשנות">
       ${picks.length > 0 &&
       html`<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 p-3 text-[14px]">
         <p>לפני: <b class=${TONE[baseVerdict.tone].text}>${baseVerdict.title}</b> · עכשיו: <b class=${TONE[mk.verdict.tone].text}>${mk.verdict.title}</b></p>

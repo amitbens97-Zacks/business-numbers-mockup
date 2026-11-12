@@ -41,13 +41,15 @@ function FbSwitch({ sw, onSwitch }) {
 // production the model writes new ones every time: no limit). A removed one does not come back.
 const BATCH = 4;
 const MAX_SHOWN = 8;
-function SharkCard({ x, label, onAdd, onDismiss }) {
-  return html`<div class="flex min-h-[56px] items-stretch rounded-xl border-[1.5px] border-brand-300 bg-white">
+// Amit, 12.11: a card is the name and the price only. "פרטים" under the box opens the
+// note of every card (how urgent, what it is) and how the list is built.
+function SharkCard({ x, label, onAdd, onDismiss, more }) {
+  return html`<div class="flex min-h-[44px] items-stretch rounded-xl border-[1.5px] border-brand-300 bg-white">
     <button type="button" class="flex min-w-0 flex-1 items-start gap-2 rounded-s-xl px-3 py-2 text-start hover:bg-brand-50 cursor-pointer" onClick=${() => onAdd(x)}>
       <span class="mt-0.5 shrink-0 text-brand-600"><${Icon} name="plus" size=${16} /></span>
       <span class="min-w-0 flex-1">
-        <span class="flex items-baseline justify-between gap-2"><b class="text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
-        <small class="block text-[12px] leading-snug text-muted"><span class=${cx('font-bold', x.need === 1 ? 'text-ink' : '')}>${NEED_LABEL[x.need || 3]}</span>${x.note ? ` · ${x.note}` : ''}</small>
+        <span class="flex items-baseline justify-between gap-2"><b class="min-w-0 truncate text-[14px] text-brand-600">${x.name}</b><b class="shrink-0 text-[14px] tabular-nums text-ink">${label(x)}</b></span>
+        ${more && html`<small class="rise block text-[12px] leading-snug text-muted"><span class=${cx('font-bold', x.need === 1 ? 'text-ink' : '')}>${NEED_LABEL[x.need || 3]}</span>${x.note ? ` · ${x.note}` : ''}</small>`}
       </span>
     </button>
     <button type="button" class="grid w-9 shrink-0 place-items-center rounded-e-xl border-s border-line text-muted hover:bg-error-50 hover:text-error cursor-pointer" aria-label=${`לא רלוונטי: ${x.name}`} title="לא רלוונטי" onClick=${() => onDismiss(x)}><${Icon} name="x" size=${15} /></button>
@@ -58,21 +60,19 @@ function SharkChips({ title, items, onAdd, onDismiss, label }) {
   const extra = items.filter((x) => x.extra);
   const pool = [...base, ...extra];
   const [want, setWant] = useState(Math.min(MAX_SHOWN, base.length));
+  const [more, setMore] = useState(false);
   const list = pool.slice(0, want);
   const full = list.length >= MAX_SHOWN;
   const left = pool.length - list.length;
   if (!items.length) return null;
   return html`<div class="mt-4 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
-    <p class="mb-1 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
-    <p class="mb-2 text-[12px] text-muted">מסודר מהדחוף למה שיכול לחכות. מחירי שוק כולל מע"מ, נובמבר 2026, אלא אם כתוב "+ מע"מ". אחרי שמוסיפים אפשר לשנות כל סכום.</p>
-    ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} onDismiss=${onDismiss} />`)}</div>`}
-    ${full
-      ? html`<p class="mt-2 text-[13px] text-muted">עד 8 הצעות בכל פעם. הצעה שלא רלוונטית אפשר למחוק (✕), וחדשה תבוא במקומה.</p>`
-      : left > 0
-        ? html`<button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[14px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setWant(Math.min(MAX_SHOWN, list.length + BATCH))}>
-            <${Icon} name="plus" size=${15} />עוד הצעות
-          </button>`
-        : html`<p class="mt-2 text-[13px] text-muted">הכריש עבר על כל מה שמתאים לעסק כמו שלך. אם חסר משהו, אפשר להוסיף שורה משלך.</p>`}
+    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />${title}</p>
+    ${list.length > 0 && html`<div class="grid gap-2 sm:grid-cols-2">${list.map((x) => html`<${SharkCard} key=${x.name} x=${x} label=${label} onAdd=${onAdd} onDismiss=${onDismiss} more=${more} />`)}</div>`}
+    <div class="mt-1.5 flex flex-wrap items-center gap-x-4">
+      ${!full && left > 0 && html`<button type="button" class="inline-flex h-8 items-center gap-1 text-[13px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setWant(Math.min(MAX_SHOWN, list.length + BATCH))}><${Icon} name="plus" size=${14} />עוד הצעות</button>`}
+      <button type="button" aria-expanded=${more} class="inline-flex h-8 items-center gap-1 text-[13px] font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setMore(!more)}><${Icon} name=${more ? 'chevron-up' : 'info'} size=${14} />${more ? 'פחות פרטים' : 'פרטים'}</button>
+    </div>
+    ${more && html`<p class="rise mt-1 text-[12px] text-muted">מהדחוף למה שיכול לחכות. מחירי שוק כולל מע"מ, נובמבר 2026. אחרי שמוסיפים אפשר לשנות כל סכום. ✕ מוחק הצעה, וחדשה באה במקומה (עד 8 בכל פעם).</p>`}
   </div>`;
 }
 
@@ -140,7 +140,7 @@ function BudgetSlider({ s, b, setBudget }) {
   const free = v - b.allocated - b.over;
   const status =
     s.setupBudget == null && draft == null
-      ? `כמה כסף ${g('אתה שם', 'את שמה')} בצד להקמת העסק? אפשר לגרור, או ללחוץ על המספר ולכתוב.`
+      ? `כמה ${g('אתה שם', 'את שמה')} בצד להקמה?`
       : b.allocated > v
         ? html`<span class="text-error">הפריטים עוברים את התקציב ב-${fmt(b.allocated - v)}.</span>`
         : b.allocated > 0 && free <= 0
@@ -224,17 +224,17 @@ function SetupTable({ s, up }) {
       <span>פריט</span><span>שולם</span><span>נשאר לשלם</span><span class="text-end">שולם במלואו</span>
     </div>
     <ul>${s.setup.map((x) => (x.flowbiz ? html`<${SavedRow} key=${x.id} x=${x} remove=${() => remove(x)} />` : html`<${SetupRow} key=${x.id} x=${x} set=${set(x.id)} remove=${() => remove(x)} sw=${fbSwitchOf(x.name, s, 'setup')} />`))}</ul>
-    ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים. אפשר להוסיף פריט, או להתחיל מההצעות של הכריש.</p>`}
+    ${!s.setup.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין פריטים.</p>`}
     <div class=${cx('grid grid-cols-3 items-center gap-x-2 gap-y-1 border-t-2 border-ink/70 pt-3 md:gap-x-3', SETUP_COLS)}>
       <b class="col-span-3 text-[15px] md:col-span-1">סך הכול בפריטים</b>
       ${cell('שולם', total(b.spent))}
       ${cell('נשאר לשלם', total(b.remaining))}
     </div>
-    ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל ${s.setup.filter((x) => x.flowbiz).map((x) => x.name).join(' ו')}, ש-FlowBiz בונה: המחיר בשוק (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))}) לא נספר.</p>`}
+    ${s.setup.some((x) => x.flowbiz) && html`<p class="mt-1 text-[12px] text-muted">לא כולל מה ש-FlowBiz בונה (${fmt(savedOf(s.setup.filter((x) => x.flowbiz)))} בשוק).</p>`}
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />פריט להקמה</button>
     <${SetupMust} s=${s} up=${up} />
     <${SharkChips}
-      title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל מוציאים בהקמה גם על`}
+      title="הכריש: בדרך כלל מוציאים בהקמה גם על"
       items=${sharkSetupFor(s).filter((x) => !have.has(x.name) && !isDismissed(s, x) && !(mustReady(s, 'setup') && mustSetupFor(s).some((y) => y.name === x.name)))}
       onDismiss=${(x) => dismiss(up, x)}
       label=${(x) => x.shown || fmt(x.planned)}
@@ -292,19 +292,22 @@ const mustReady = (s, which) =>
 function MustHave({ id, items, children }) {
   if (!items.length) return null;
   return html`<div id=${id} class="rise mt-4 scroll-mt-24 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
-    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש ממליץ: כמעט כל עסק צריך גם את זה</p>
+    <p class="mb-2 flex items-center gap-2 text-[14px] font-bold"><img src="assets/shark/shark-thinking-sm.svg" alt="" class="h-6 w-6 rounded-full bg-white" />הכריש: כמעט כל עסק צריך גם</p>
     <ul class="flex flex-col gap-2">${children}</ul>
   </div>`;
 }
 const mustBtn = 'inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-bold cursor-pointer';
-function MustRow({ x, amount, why, actions, onLater }) {
+// Amit, 12.11: the row is the name, the amount, one short line and the buttons. What the
+// item is and the full reasoning open from "פרטים".
+function MustRow({ x, amount, short, why, actions, onLater }) {
+  const [more, setMore] = useState(false);
   return html`<li class="rounded-lg bg-white p-2.5 ring-1 ring-line">
     <p class="flex items-baseline justify-between gap-2"><b class="text-[15px]">${x.name}</b><b class="shrink-0 tabular-nums">${amount}</b></p>
-    <p class="text-[13px] text-muted">${x.note}</p>
-    <p class="mt-1 text-[13px]">${why}</p>
-    <div class="mt-2 flex flex-wrap gap-2">
+    <p class="flex flex-wrap items-center gap-x-3 text-[13px] font-semibold">${short && html`<span>${short}</span>`}<button type="button" aria-expanded=${more} class="inline-flex h-7 items-center gap-1 font-bold text-brand-600 hover:underline cursor-pointer" onClick=${() => setMore(!more)}><${Icon} name=${more ? 'chevron-up' : 'info'} size=${14} />פרטים</button></p>
+    ${more && html`<div class="rise mt-1 rounded-lg bg-canvas px-2.5 py-1.5 text-[13px] text-muted"><p>${x.note}</p>${why && html`<p class="mt-0.5">${why}</p>`}</div>`}
+    <div class="mt-2 flex flex-wrap items-center gap-2">
       ${actions.map(([label, icon, onClick, main], i) => html`<button key=${i} type="button" class=${cx(mustBtn, main ? 'bg-brand-600 text-white hover:bg-brand-700' : 'border-[1.5px] border-brand-300 bg-white text-brand-600 hover:bg-brand-50')} onClick=${onClick}><${Icon} name=${icon} size=${14} />${label}</button>`)}
-      <button type="button" class=${cx(mustBtn, 'text-muted hover:bg-white')} onClick=${onLater}>לא כרגע</button>
+      <button type="button" class=${cx(mustBtn, 'text-muted hover:bg-canvas')} onClick=${onLater}>לא כרגע</button>
     </div>
   </li>`;
 }
@@ -318,18 +321,20 @@ function SetupMust({ s, up }) {
       const fit = setupFit(s, x);
       if (fit.ok)
         return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${fmt(x.planned)}
-          why=${fit.free !== Infinity ? `נכנס בתקציב: אחרי זה נשארים ${fmt(fit.free)} פנויים.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
+          short=${fit.free !== Infinity ? `נכנס בתקציב` : ''}
+          why=${fit.free !== Infinity ? `אחרי זה נשארים ${fmt(fit.free)} פנויים בתקציב.` : 'בלי זה קשה להתקדם, אז כדאי שיהיה ברשימה.'}
           actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
       const acts = [];
       if (fit.drop)
-        acts.push([`להוסיף, ולוותר על ${fit.drop.y.name}${fit.raise > 0 ? ` ולהגדיל ב-${fmt(fit.raise)}` : ''}`, 'arrow-left-right', () => up((d) => {
+        acts.push([`להוסיף במקום ${fit.drop.y.name}${fit.raise > 0 ? ` (+${fmt(fit.raise)} לתקציב)` : ''}`, 'arrow-left-right', () => up((d) => {
           d.setup = d.setup.filter((y) => y.id !== fit.drop.y.id);
           addIt(d, x);
           if (fit.raise > 0) { d.setupBudget = (d.setupBudget || 0) + fit.raise; d.budgetSet = true; }
         }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
-      acts.push([`להוסיף ולהגדיל את התקציב ב-${fmt(fit.over)}`, 'plus', () => up((d) => { addIt(d, x); d.setupBudget = (d.setupBudget || 0) + fit.over; d.budgetSet = true; }, `${x.name} נוסף, התקציב גדל`), !fit.drop]);
+      acts.push([`להוסיף (+${fmt(fit.over)} לתקציב)`, 'plus', () => up((d) => { addIt(d, x); d.setupBudget = (d.setupBudget || 0) + fit.over; d.budgetSet = true; }, `${x.name} נוסף, התקציב גדל`), !fit.drop]);
       return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${fmt(x.planned)}
-        why=${html`חסרים לזה <b>${fmt(fit.over)}</b> בתקציב.${fit.drop ? html` <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)}) פחות דחוף ויכול לחכות.` : ' אין פריט שאפשר לוותר עליו בינתיים.'}`}
+        short=${`חסרים ${fmt(fit.over)} בתקציב`}
+        why=${fit.drop ? `${fit.drop.y.name} (${fmt(fit.drop.save)}) פחות דחוף ויכול לחכות.` : 'אין פריט שאפשר לוותר עליו בינתיים.'}
         actions=${acts} />`;
     })}
   <//>`;
@@ -349,10 +354,11 @@ function ExpensesMust({ s, up }) {
           actions=${[['להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), true]]} />`;
       const acts = [];
       if (fit.drop)
-        acts.push([`להוסיף, ולוותר על ${fit.drop.y.name}`, 'arrow-left-right', () => up((d) => { d.expenses = d.expenses.filter((y) => y.id !== fit.drop.y.id); addIt(d, x); }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
+        acts.push([`להוסיף במקום ${fit.drop.y.name}`, 'arrow-left-right', () => up((d) => { d.expenses = d.expenses.filter((y) => y.id !== fit.drop.y.id); addIt(d, x); }, `${x.name} נוסף, ${fit.drop.y.name} ירד`), true]);
       acts.push(['רק להוסיף', 'plus', () => up((d) => addIt(d, x), `${x.name} נוסף`), !fit.drop]);
       return html`<${MustRow} key=${x.name} x=${x} onLater=${() => later(x)} amount=${amount}
-        why=${html`בלי הכנסה הכסף מחזיק היום ${spanOf(fit.before)}, ועם זה רק <b>${spanOf(fit.after)}</b>.${fit.drop ? html` במקום זה אפשר לוותר בינתיים על <b>${fit.drop.y.name}</b> (${fmt(fit.drop.save)} בחודש), ואז ${spanOf(fit.drop.rw)}.` : ' אין הוצאה שיכולה לחכות ושמשנה את התמונה, אז זה נשאר בחוסר. כדאי לבדוק איך מכניסים עוד כסף לעסק.'}`}
+        short=${`עם זה הכסף מחזיק רק ${spanOf(fit.after)}`}
+        why=${`בלי הכנסה הכסף מחזיק היום ${spanOf(fit.before)}.${fit.drop ? ` אפשר לוותר בינתיים על ${fit.drop.y.name} (${fmt(fit.drop.save)} בחודש), ואז ${spanOf(fit.drop.rw)}.` : ' אין הוצאה שיכולה לחכות ושמשנה את התמונה. כדאי לבדוק איך מכניסים עוד כסף לעסק.'}`}
         actions=${acts} />`;
     })}
   <//>`;
@@ -419,14 +425,14 @@ function ExpensesTable({ s, up }) {
     <ul>
       ${s.expenses.map((x) => html`<${ExpenseRow} key=${x.id} x=${x} set=${set(x.id)} sw=${!(hasBundle && !x.flowbiz) ? fbSwitchOf(x.name, s, 'expenses') : null} onSwitch=${(y) => switchRow(x, y)} remove=${() => up((d) => (d.expenses = d.expenses.filter((y) => y.id !== x.id)), `${x.name || 'ההוצאה'} נמחקה`)} />`)}
     </ul>
-    ${!s.expenses.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות. אפשר להוסיף הוצאה, או להתחיל מההצעות של הכריש.</p>`}
+    ${!s.expenses.length && html`<p class="border-t border-line py-4 text-center text-[14px] text-muted">עוד אין הוצאות.</p>`}
     <div class="flex items-center justify-between gap-3 border-t-2 border-ink/70 pt-3">
       <b class="text-[15px]">סך הכול בחודש</b><${Num} n=${fixedMonthly(s)} class="text-[17px]" />
     </div>
     <button type="button" onClick=${() => add()} class="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-brand-300 text-[14px] font-bold text-brand-600 hover:bg-brand-50 cursor-pointer"><${Icon} name="plus" size=${16} />הוצאה קבועה</button>
     <${ExpensesMust} s=${s} up=${up} />
     <${SharkChips}
-      title=${`הכריש: ${g('יועצי', 'יועצות')} שיווק בדרך כלל משלמים גם על`}
+      title="הכריש: בדרך כלל משלמים גם על"
       onDismiss=${(x) => dismiss(up, x)}
       items=${sharkExpensesFor(s).filter((x) => !have.has(x.name) && !isDismissed(s, x) && !(mustReady(s, 'expenses') && mustExpensesFor(s).some((y) => y.name === x.name)) && !(x.flowbiz && hasBundle) && !(x.flowbiz === 'system' && hasFb)).map((x) => (hasBundle && x.fb ? { ...x, fb: null } : x))}
       label=${(x) => x.shown || `${fmt(x.amount)} ${per(x.freq)}`}
@@ -446,7 +452,7 @@ function MoneyNow({ s, up }) {
       <${YesNo} value=${has} onChange=${(v) => up((d) => (d.bank.has = v))} />
     </div>
     ${has != null &&
-    html`<${Field} class="!mb-0 rise" label=${has ? 'כמה יש היום בחשבון הבנק של העסק?' : 'כמה כסף יש היום לעסק?'} hint=${has ? 'היתרה כמו שהיא בבנק היום' : 'כל הכסף ששמת בצד לעסק, גם אם הוא בחשבון הפרטי'}>
+    html`<${Field} class="!mb-0 rise" label=${has ? 'כמה יש היום בחשבון הבנק של העסק?' : 'כמה כסף יש היום לעסק?'} hint=${has ? '' : 'גם אם הוא בחשבון הפרטי'}>
       <${Money} label="סכום" value=${s.bank.amount} onChange=${(v) => up((d) => {
         d.bank.amount = v;
         if (d.stage === 'setup' && !d.budgetSet) d.setupBudget = v; // the budget starts as all the money
@@ -504,7 +510,7 @@ function History({ s, up }) {
     ${h.mode &&
     html`<div class="rise">
       ${h.mode === 'file' && html`<p class="mb-3 flex items-center gap-2 text-[14px]"><${Tag} tone="blue"><${Icon} name="file-check-2" size=${13} />מהדוח<//>אפשר לתקן כל מספר.</p>`}
-      <${Field} label="מאיזה חודש העסק התחיל?" hint="עסק שפעיל כמה שנים? אפשר לספור מינואר שעבר, כדי שהממוצע ישקף את היום.">
+      <${Field} label="מאיזה חודש העסק התחיל?" hint="עסק ותיק? אפשר לספור מינואר שעבר.">
         <select class=${cx(selCls, '!h-12 max-w-[280px] !text-[15px]')} aria-label="מאיזה חודש העסק התחיל" value=${h.from || ''} onChange=${(e) => set('from')(e.target.value || null)}>
           <option value="">לבחור חודש</option>
           ${START_MONTHS.map((k) => html`<option key=${k} value=${k}>${monthYear(k)}</option>`)}
@@ -514,10 +520,10 @@ function History({ s, up }) {
         <${Field} label="כמה נכנס לעסק עד היום?" hint=${`כל ההכנסות, עד סוף ${monthYear(LAST_MONTH)}`}>
           <${Money} label="כמה נכנס עד היום" value=${h.income} onChange=${set('income')} />
         <//>
-        <${Field} label="כמה יצא מהעסק עד היום?" hint="כל ההוצאות, כולל ההקמה">
+        <${Field} label="כמה יצא מהעסק עד היום?" hint="כולל ההקמה">
           <${Money} label="כמה יצא עד היום" value=${h.out} onChange=${set('out')} />
         <//>
-        <${Field} label="כמה לקוחות שילמו עד היום?" hint="כל לקוח נספר פעם אחת">
+        <${Field} label="כמה לקוחות שילמו עד היום?" hint="כל לקוח פעם אחת">
           <${Money} suffix="" label="כמה לקוחות שילמו עד היום" value=${h.clients} onChange=${set('clients')} />
         <//>
       </div>
@@ -556,7 +562,7 @@ function ToCome({ s, up }) {
 
 function Regular({ s, up }) {
   return html`<div class="grid gap-4 sm:grid-cols-2">
-    <${Field} class="!mb-0" label="כמה נכנס כל חודש?" hint="הסכום של כל הלקוחות הקבועים יחד"><${Money} label="הכנסה קבועה" value=${s.regular.amount} onChange=${(v) => up((d) => (d.regular.amount = v))} /><//>
+    <${Field} class="!mb-0" label="כמה נכנס כל חודש?" hint="כל הלקוחות הקבועים יחד"><${Money} label="הכנסה קבועה" value=${s.regular.amount} onChange=${(v) => up((d) => (d.regular.amount = v))} /><//>
     <${Field} class="!mb-0" label="באיזה יום בחודש?">
       <select class="h-11 w-full rounded-xl border-[1.5px] border-line bg-white px-3 text-[16px] cursor-pointer" value=${s.regular.day} onChange=${(e) => up((d) => (d.regular.day = Number(e.target.value)))}>
         ${[1, 5, 10, 15, 20, 25, 28].map((d) => html`<option value=${d}>ב-${d} לחודש</option>`)}
@@ -570,7 +576,7 @@ function SetupDone({ s, up }) {
     <${YesNo} value=${s.setupDone} onChange=${(v) => up((d) => (d.setupDone = v))} />
     ${s.setupDone === false &&
     html`<div class="rise mt-4">
-      <p class="mb-2 text-[14px] text-muted">מה עוד נשאר לשלם? מה שנשאר יוצא מהכסף של העסק בתחזית.</p>
+      <p class="mb-2 text-[14px] text-muted">מה עוד נשאר לשלם?</p>
       <${SetupTable} s=${s} up=${up} />
     </div>`}
   </div>`;
@@ -586,7 +592,7 @@ function Cushion({ s, up }) {
     <div class="pb-6">
       <div class="mb-1 flex justify-between text-[13px] font-bold"><span>בעסק היום ${fmt(have)}</span><span class="text-muted">מתוך ${fmt(target)}</span></div>
       <div class="h-3 overflow-hidden rounded-full bg-[#e3ddd0]"><div class="h-full rounded-full bg-warn" style=${{ width: `${Math.min(100, (have / (target || 1)) * 100)}%` }}></div></div>
-      <p class="mt-1 text-[13px] text-muted">${have >= target ? 'הכרית מלאה.' : `חסרים ${fmt(target - have)}. ממלאים אותה בהדרגה, תוך חצי שנה.`}</p>
+      <p class="mt-1 text-[13px] text-muted">${have >= target ? 'הכרית מלאה.' : `חסרים ${fmt(target - have)}. ממלאים בהדרגה.`}</p>
     </div>
   </div>`;
 }
@@ -619,7 +625,7 @@ export function sectionsOf(s) {
     },
     setup: {
       title: 'תקציב ההקמה',
-      sub: 'הוצאות חד-פעמיות כדי להתחיל: מה כבר שילמת, ומה נשאר לשלם.',
+      sub: 'הוצאות חד-פעמיות כדי להתחיל.',
       ok: true,
       sum: s.setupBudget != null || s.setup.length ? `תקציב ${fmt(b.budget || b.final)} · נשאר לשלם ${fmt(b.remaining)}` : '',
       Body: SetupTable,
@@ -627,7 +633,7 @@ export function sectionsOf(s) {
     },
     history: {
       title: 'הכנסות והוצאות עד היום',
-      sub: 'כמה נכנס לעסק וכמה יצא ממנו מאז שהתחיל. מזה נחשב איך נראה חודש ממוצע היום.',
+      sub: 'כמה נכנס וכמה יצא מאז שהעסק התחיל.',
       ok: historyMissing(s) == null,
       need: historyMissing(s),
       sum: avg ? `נכנסו ${fmt(s.history.income)}${s.history.out != null ? `, יצאו ${fmt(s.history.out)}` : ''} · ${avg.n === 1 ? 'חודש אחד' : `${avg.n} חודשים`}` : '',
@@ -643,21 +649,21 @@ export function sectionsOf(s) {
     },
     toCome: {
       title: 'כסף שעוד מגיע מלקוחות',
-      sub: `תשלומים שלקוחות כבר התחייבו אליהם ועוד לא נכנסו${s.stage === 'active' ? ', בלי ההכנסה הקבועה' : ''}. אין? אפשר להמשיך.`,
+      sub: 'תשלומים שלקוחות התחייבו אליהם ועוד לא נכנסו. אין? ממשיכים.',
       ok: true,
       sum: `${fmt(toComeOf(s))}`,
       Body: ToCome,
     },
     expenses: {
       title: 'הוצאות קבועות',
-      sub: 'מה יוצא כל חודש, כל שבוע או פעם בשנה. אפשר לסמן הוצאה שתתחיל רק בעוד כמה חודשים.',
+      sub: 'מה יוצא כל חודש, שבוע או שנה.',
       ok: true,
       sum: `${s.expenses.length ? `${s.expenses.length} הוצאות · ` : ''}${fmt(fixedMonthly(s))} בחודש`,
       Body: ExpensesTable,
     },
     setupDone: {
       title: 'ההקמה מאחוריך?',
-      sub: 'ציוד, אתר, קמפיין השקה: אם עוד יש הוצאה חד-פעמית שמחכה, נכניס אותה לתחזית.',
+      sub: 'נשארה הוצאה חד-פעמית? נכניס אותה לתחזית.',
       ok: s.setupDone != null,
       need: 'צריך לענות אם ההקמה הסתיימה',
       sum: s.setupDone ? 'כן, ההקמה מאחוריי' : s.setupDone === false ? `נשאר לשלם ${fmt(b.remaining)}` : '',
@@ -665,7 +671,7 @@ export function sectionsOf(s) {
     },
     cushion: {
       title: 'כרית ביטחון',
-      sub: 'כסף שנשאר בעסק לחודש חלש. ברירת המחדל: הוצאות של חודשיים.',
+      sub: 'כסף שנשאר בעסק לחודש חלש.',
       ok: true,
       sum: fmt(cushionTarget(s)),
       Body: Cushion,
@@ -767,7 +773,7 @@ function Summary({ s, up }) {
     html`<div class=${cx('mt-3 rounded-xl p-3', avg.left < 0 ? 'bg-warn-50' : 'bg-brand-50')}>
       <p class="text-[13px] font-bold text-muted">בחודש ממוצע היום נשארים</p>
       <p class=${cx('font-display text-[26px] font-black leading-tight tabular-nums', avg.left < 0 ? 'text-warn' : 'text-brand-600')}>${fmt(avg.left)}</p>
-      ${s.goal > 0 && html`<p class=${cx('text-[13px] font-bold', avg.left >= s.goal ? 'text-money' : 'text-ink')}>${avg.left >= s.goal ? `מעל היעד שלך (${fmt(s.goal)}) כבר היום` : `חסרים ${fmt(s.goal - avg.left)} ליעד שלך (${fmt(s.goal)}). בחלק 3 נראה מה למכור.`}</p>`}
+      ${s.goal > 0 && html`<p class=${cx('text-[13px] font-bold', avg.left >= s.goal ? 'text-money' : 'text-ink')}>${avg.left >= s.goal ? `מעל היעד שלך (${fmt(s.goal)}) כבר היום` : `חסרים ${fmt(s.goal - avg.left)} ליעד שלך`}</p>`}
       <${How}><${CalcLines} lines=${[['נכנס בחודש ממוצע', fmt(avg.income)], ['פחות מה שיצא בחודש ממוצע', fmt(-avg.out)], ['נשאר', fmt(avg.left), true]]} note="ממוצע = הסכומים עד היום ÷ מספר החודשים המלאים מאז שהעסק התחיל." /><//>
     </div>`}
     ${showRw &&
@@ -824,7 +830,7 @@ export function TodayScreen({ s, up, onStage }) {
     if (!after) setTimeout(() => document.getElementById('today-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
   return html`<div class="mx-auto max-w-[1180px] px-4 py-6 md:px-8">
-    <${StepHeading} n="5" eyebrow=${`חלק 1 מתוך ${PARTS.length} · ${PARTS[0]} · ${st.board}`} title=${s.stage === 'setup' ? ['כמה כסף יש ', 'להקמה', '?'] : ['איך נראה ', 'חודש', ' היום?']} sub=${s.stage === 'setup' ? `${secs.length} שאלות קצרות. עוד אין הכנסה, אז נבדוק כמה זמן הכסף מחזיק.` : `${secs.length} שאלות קצרות. ממה שכבר קרה נבנה את נקודת ההתחלה של התחזית.`}>
+    <${StepHeading} n="5" eyebrow=${`חלק 1 מתוך ${PARTS.length} · ${PARTS[0]} · ${st.board}`} title=${s.stage === 'setup' ? ['כמה כסף יש ', 'להקמה', '?'] : ['איך נראה ', 'חודש', ' היום?']} sub=${`${secs.length} שאלות קצרות.`}>
       <button type="button" class="mt-1 inline-flex items-center gap-1.5 text-[14px] font-bold text-brand-600 underline underline-offset-2 cursor-pointer" onClick=${onStage} title="לשנות את מצב העסק"><${Icon} name=${st.icon} size=${15} />${st.label}</button>
     <//>
     <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_260px] xl:grid-cols-[minmax(0,1fr)_300px]">

@@ -72,7 +72,7 @@ export function Opening() {
   return html`<div class="mx-auto grid max-w-[1120px] items-center gap-8 px-4 py-6 md:grid-cols-[1.15fr_0.85fr] md:gap-12 md:px-8 md:py-8">
     <div>
       <${StepHeading} n="5" eyebrow="שלב 5 · שביל הכסף" title=${['', 'העסק', ' במספרים']} />
-      <p class="mb-6 max-w-[50ch] text-[18px] text-ink">${g('נבדוק', 'נבדוק')} יחד אם העסק שבנית יכול להחזיק אותך: כמה כסף יש היום, כמה כל מוצר מכניס, כמה צריך למכור כדי להגיע ליעד, ותחזית לשנה קדימה. בסוף תדע${g('', 'י')} אם המודל עובד, ואם לא, מה בדיוק לשנות.</p>
+      <p class="mb-6 max-w-[50ch] text-[18px] text-ink">נבדוק אם העסק שבנית יכול להחזיק אותך, ואם לא, מה לשנות.</p>
       <div class="flex flex-col gap-2 border-t border-line pt-4 text-[15px]">
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1"><${Icon} name="list" size=${17} class="text-brand-600" /><b>החלקים:</b> ${PARTS.join(' · ')}</p>
         <p class="flex items-center gap-2"><${Icon} name="clock" size=${17} class="text-brand-600" /><b>זמן:</b> כ-15 דקות</p>
